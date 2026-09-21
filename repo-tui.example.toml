@@ -1,0 +1,40 @@
+# Example repo-tui config.
+#
+# Copy this to <repo-root>/.repo-tui.toml (project-local, shareable with your
+# team) or ~/.config/repo-tui/config.toml (personal default). A project-local
+# file fully overrides the global one -- they are not merged.
+
+[ignore]
+# Shell-glob patterns (fnmatch), matched against each file's path relative to
+# its own project root. Anything that matches is excluded from the +/- stats,
+# the "changed" indicator, and hidden from the file list unless you press `i`.
+patterns = [
+    "*.pyc",
+    "__pycache__/*",
+    "*.o",
+    "*.a",
+    "*.so",
+    "*.class",
+    "*.swp",
+    "*~",
+    ".DS_Store",
+    # add your own build-generated noise here, e.g.:
+    # "res/values/version.xml",
+    # "*_intermediates/*",
+]
+
+[ignore.per_project]
+# Patterns that only apply to specific projects, keyed by manifest project
+# name (not path).
+# "platform/frameworks/base" = ["res/values/version.xml"]
+
+[display]
+# Show every project by default instead of hiding unchanged ones (press `a`
+# to toggle at runtime either way).
+show_all_default = false
+
+[performance]
+# How many projects to run `git status` on in parallel. Raise this on a
+# machine with fast local disk/SSD and many CPU cores; lower it on slow or
+# network-backed storage.
+max_workers = 16

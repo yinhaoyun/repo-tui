@@ -1,0 +1,100 @@
+Screen {
+    layout: vertical;
+}
+
+HeaderBar {
+    height: 1;
+    background: $primary-background;
+    color: $text;
+    padding: 0 1;
+}
+
+#body {
+    height: 1fr;
+}
+
+ProjectList {
+    width: 44%;
+    border-right: solid $primary-background-lighten-2;
+}
+
+DetailPane {
+    width: 1fr;
+    padding: 0 1;
+}
+
+#project-summary {
+    height: auto;
+    padding: 0 0 1 0;
+    border-bottom: solid $primary-background-lighten-2;
+    margin-bottom: 1;
+}
+
+FileTable {
+    height: 1fr;
+}
+
+#filter-bar {
+    height: 1;
+    dock: bottom;
+}
+
+KeyBar {
+    height: 1;
+    dock: bottom;
+    background: $primary-background;
+    color: $text;
+    padding: 0 1;
+}
+
+HelpModal {
+    align: center middle;
+}
+
+#help-box {
+    width: 72;
+    height: auto;
+    max-height: 90%;
+    background: $panel;
+    border: round $primary;
+    padding: 1 2;
+}
+
+DiffScreen {
+    align: center middle;
+}
+
+#diff-box {
+    width: 90%;
+    height: 90%;
+    background: $panel;
+    border: round $primary;
+}
+
+#diff-title {
+    height: 1;
+    padding: 0 1;
+    background: $primary-background;
+}
+
+#diff-log {
+    height: 1fr;
+    padding: 0 1;
+}
+
+PromptModal {
+    align: center middle;
+}
+
+#prompt-box {
+    width: 60;
+    height: auto;
+    background: $panel;
+    border: round $primary;
+    padding: 1 2;
+}
+
+#prompt-label {
+    height: auto;
+    padding-bottom: 1;
+}
