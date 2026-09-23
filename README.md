@@ -65,6 +65,30 @@ repo-tui            # from anywhere inside a repo-init'ed tree
 repo-tui /path/to/tree
 ```
 
+## Upgrading
+
+```sh
+repo-tui update
+```
+
+This only works because the install is editable (`pip install -e .` from a
+git clone): `repo-tui update` finds that clone (by walking up from the
+installed package's own location, the same trick `find_repo_root` uses for
+`.repo`), refuses to touch it if it has uncommitted local changes, runs
+`git pull --ff-only`, and reinstalls to pick up any new dependencies. It's
+equivalent to, and no more magic than, doing this by hand:
+
+```sh
+cd path/to/your/repo-tui/clone
+git pull --ff-only
+python3 -m pip install --user -e .   # only strictly needed if deps changed
+```
+
+There's no published PyPI package, so there's nothing to `pip install
+--upgrade` from — the git checkout is the only source of truth. If
+`repo-tui update` can't find a git checkout (e.g. you copied the installed
+package elsewhere without its `.git`), it'll tell you to re-clone instead.
+
 ## What it shows
 
 - **Header**: manifest name/branch, project counts (total vs. changed), and

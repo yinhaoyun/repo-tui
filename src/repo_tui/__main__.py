@@ -10,6 +10,11 @@ from .repo_backend import RepoTreeError, find_repo_root
 
 
 def run() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "update":
+        from .self_update import run_update
+
+        sys.exit(run_update())
+
     parser = argparse.ArgumentParser(prog="repo-tui", description=__doc__)
     parser.add_argument(
         "path",
@@ -17,6 +22,7 @@ def run() -> None:
         default=".",
         help="path inside the repo tree to start from (default: current directory)",
     )
+    parser.epilog = "Run `repo-tui update` to pull and reinstall the latest version."
     args = parser.parse_args()
 
     try:
