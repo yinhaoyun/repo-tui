@@ -27,7 +27,14 @@ class ProjectList(DataTable):
         self._row_paths: list[str] = []
 
     def on_mount(self) -> None:
-        self.add_columns("", "Path", "Branch", "Stat")
+        # Branch/Stat get fixed widths so they always stay visible; Path is
+        # last and auto-width, so an unusually long project path (common in
+        # real AOSP trees, e.g. deep vendor/ paths) truncates at the pane's
+        # edge instead of pushing the branch/status columns off-screen.
+        self.add_column("", width=2)
+        self.add_column("Branch", width=18)
+        self.add_column("Stat", width=12)
+        self.add_column("Path")
 
     def set_projects(
         self, projects: list[Project], show_all: bool, search: str = ""
@@ -52,9 +59,9 @@ class ProjectList(DataTable):
             style = "red" if p.error else ("yellow" if p.is_changed else "dim")
             self.add_row(
                 f"[{style}]{marker}[/]",
-                p.path,
                 p.branch_summary,
                 p.stat_summary,
+                p.path,
                 key=p.path,
             )
             self._row_paths.append(p.path)

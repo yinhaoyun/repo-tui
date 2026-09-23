@@ -25,14 +25,38 @@ whichever project you've selected, on the right.
 ## Install
 
 ```sh
+git clone https://github.com/yinhaoyun/repo-tui.git
 cd repo-tui
 python3 -m pip install --user -e .
-# (On Debian/Ubuntu 23.04+, if pip refuses with "externally-managed-environment",
-#  either use a venv, or: python3 -m pip install --user --break-system-packages -e .)
 ```
 
-This installs a `repo-tui` command (via `~/.local/bin`, make sure that's on
-your `PATH`).
+The repo is private, so `git clone` will prompt for GitHub credentials; the
+simplest fix is `gh auth login` once (via GitHub CLI) or an SSH clone URL
+(`git@github.com:yinhaoyun/repo-tui.git`) with your key already added to
+GitHub.
+
+If pip refuses with `error: externally-managed-environment` (Debian/Ubuntu
+23.04+, including 24.04), either use a venv:
+
+```sh
+sudo apt install -y python3-venv   # if not already present
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e .
+```
+
+or install straight to your user site-packages, bypassing the guard (safe
+here — it only touches your own `~/.local`, not system files):
+
+```sh
+python3 -m pip install --user --break-system-packages -e .
+```
+
+Either way, this installs a `repo-tui` command. With the venv approach it
+only exists while the venv is active (`. .venv/bin/activate` each session,
+or symlink `.venv/bin/repo-tui` somewhere on your `PATH`); with `--user` it
+lands in `~/.local/bin`, so make sure that's on your `PATH`
+(`export PATH="$HOME/.local/bin:$PATH"` in `~/.bashrc` if not).
 
 ## Use
 
