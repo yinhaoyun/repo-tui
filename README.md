@@ -134,13 +134,14 @@ right after `repo sync` — is *not* treated as changed on its own.
 | `Space` then `s` | `repo sync` the selected project |
 | `Space` then `S` | `repo sync` the whole tree |
 | `Space` then `d` | `repo sync -d` — detach the selected project to its manifest revision |
+| `Space` then `x` | discard the selected project's changes so its Stat is clean: tracked changes revert to HEAD, untracked files are deleted; files hidden by your ignore rules, commits and the branch are kept (asks y/N first) |
 | `Space` then `b`/`B`/`c`/`f` | same as the direct keys |
 | `Esc` / `Space` (in the panel) | close the action panel without doing anything |
 
 Keys that ask before doing anything (`b`, `B`, `c`, `f`) work directly.
-Keys that run straight away and change the checkout (`s`, `S`, `d`) are only
+Keys that run straight away and change the checkout (`s`, `S`, `d`, `x`) are only
 available from the `Space` action panel, so a stray keypress can't trigger
-a sync. The per-project actions (`s`, `d`, `b`/`B`, `c`) are also available
+a sync. The per-project actions (`s`, `d`, `x`, `b`/`B`, `c`) are also available
 by right-clicking a project row.
 
 While a `repo` command or a status refresh (at startup, `r`, and after every

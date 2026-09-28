@@ -16,6 +16,7 @@ PROJECT_ACTIONS = [
     ("d", "detach", "detach (sync -d)"),
     ("b", "start_branch", "start new branch"),
     ("B", "switch_branch", "switch branch"),
+    ("x", "discard", "discard changes…"),
     ("c", "copy_path", "copy path"),
 ]
 TREE_ACTIONS = [

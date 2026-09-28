@@ -80,8 +80,12 @@ def _parse_status_v2(output: str) -> tuple[str, bool, int, int, list[FileStatus]
             # 2 XY sub mH mI mW hH hI X<score> path<TAB>origPath
             fields = line.split(" ", 9)
             xy = fields[1]
-            path = fields[-1].split("\t")[0]
-            files.append(FileStatus(path=path, index_status=xy[0], worktree_status=xy[1]))
+            path, _, orig_path = fields[-1].partition("\t")
+            files.append(
+                FileStatus(
+                    path=path, index_status=xy[0], worktree_status=xy[1], orig_path=orig_path
+                )
+            )
         elif line.startswith("u "):
             fields = line.split(" ", 10)
             path = fields[-1]
@@ -172,3 +176,50 @@ def read_file_diff(project: Project, rel_path: str, staged: bool = False) -> str
         args.append("--cached")
     args.extend(["--", rel_path])
     return _run_git(project.abs_path, args)
+
+
+_PATHS_PER_CALL = 200  # keep argv well under the OS limit on huge changesets
+
+
+def discard_changes(project: Project) -> tuple[int, list[str]]:
+    """Throw away exactly what the Stat column counts: every non-ignored
+    changed file. Tracked changes (staged or not) are restored to HEAD and
+    untracked files are deleted. Files matched by the ignore rules, commits,
+    and the checked-out branch are left alone.
+
+    Returns (exit code, output lines); the exit code is the first non-zero
+    one from git, else 0."""
+    files = [f for f in project.files if not f.ignored]
+    tracked: list[str] = []
+    for f in files:
+        if not f.is_untracked:
+            tracked.append(f.path)
+            if f.orig_path:
+                tracked.append(f.orig_path)
+    untracked = [f.path for f in files if f.is_untracked]
+
+    returncode = 0
+    output: list[str] = []
+
+    def run(args: list[str]) -> int:
+        nonlocal returncode
+        result = subprocess.run(
+            ["git", *args],
+            cwd=project.abs_path,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_GIT_TIMEOUT,
+        )
+        output.extend(line for line in (result.stdout + result.stderr).splitlines() if line)
+        if result.returncode and not returncode:
+            returncode = result.returncode
+        return result.returncode
+
+    for i in range(0, len(tracked), _PATHS_PER_CALL):
+        chunk = tracked[i : i + _PATHS_PER_CALL]
+        if run(["restore", "--source=HEAD", "--staged", "--worktree", "--", *chunk]) == 0:
+            output.extend(f"Restored {path}" for path in chunk)
+    for i in range(0, len(untracked), _PATHS_PER_CALL):
+        run(["clean", "-f", "--", *untracked[i : i + _PATHS_PER_CALL]])
+    return returncode, output

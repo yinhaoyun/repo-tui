@@ -16,6 +16,7 @@ class FileStatus:
     added: int = 0
     deleted: int = 0
     ignored: bool = False
+    orig_path: str = ""  # for renames/copies: the path it was renamed from
 
     @property
     def is_untracked(self) -> bool:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from rich.markup import escape
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
@@ -16,6 +17,7 @@ from . import repo_backend
 from .models import Project, TreeInfo
 from .widgets.action_panel import ActionPanel
 from .widgets.busy_modal import BusyModal
+from .widgets.confirm_modal import ConfirmModal
 from .widgets.context_menu import ContextMenu
 from .widgets.detail_pane import DetailPane, FileTable
 from .widgets.diff_screen import DiffScreen
@@ -345,6 +347,46 @@ class RepoTuiApp(App):
             handle,
         )
 
+    def _discard_changes(self, project: Project) -> None:
+        files = [f for f in project.files if not f.ignored]
+        if not files:
+            self.notify(f"{project.path} is already clean")
+            return
+        untracked = sum(1 for f in files if f.is_untracked)
+        shown = "\n".join(f"  {escape(f.code)}  {escape(f.path)}" for f in files[:12])
+        if len(files) > 12:
+            shown += f"\n  …and {len(files) - 12} more"
+        body = (
+            f"{shown}\n\n"
+            f"Tracked changes are reverted to HEAD"
+            + (f" and [b]{untracked} untracked file(s) are deleted[/]" if untracked else "")
+            + ".\n[b red]This cannot be undone.[/] Ignored files, commits and the branch are kept."
+        )
+
+        async def discard(on_output, _progress) -> int:
+            returncode, lines = await asyncio.to_thread(git_backend.discard_changes, project)
+            for line in lines:
+                await on_output(line)
+            return returncode
+
+        def handle(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            self.run_worker(
+                self._run_and_refresh(
+                    f"discard changes: {project.path}",
+                    discard,
+                    command="git restore --source=HEAD --staged --worktree … && git clean -f …",
+                ),
+                exclusive=True,
+                group="discard",
+            )
+
+        self.push_screen(
+            ConfirmModal(f"Discard {len(files)} changed file(s) in {project.path}?", body),
+            handle,
+        )
+
     def _copy_project_path(self, project: Project) -> None:
         text = str(project.abs_path)
         try:
@@ -359,6 +401,7 @@ class RepoTuiApp(App):
             ("detach", "Detach to manifest revision (repo sync -d)"),
             ("switch", "Switch branch…"),
             ("start", "Start new branch…"),
+            ("discard", "Discard changes…"),
             ("copy", "Copy path"),
         ]
 
@@ -371,6 +414,8 @@ class RepoTuiApp(App):
                 self._prompt_switch_branch(project)
             elif choice == "start":
                 self._prompt_start_branch(project)
+            elif choice == "discard":
+                self._discard_changes(project)
             elif choice == "copy":
                 self._copy_project_path(project)
 
@@ -433,6 +478,11 @@ class RepoTuiApp(App):
         project = self._selected_project()
         if project is not None:
             self._prompt_switch_branch(project)
+
+    def action_discard(self) -> None:
+        project = self._selected_project()
+        if project is not None:
+            self._discard_changes(project)
 
     def action_copy_path(self) -> None:
         project = self._selected_project()

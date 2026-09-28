@@ -35,6 +35,7 @@ HELP_TEXT = """\
   space s          repo sync — selected project only
   space S          repo sync — entire tree
   space d          repo sync -d — detach selected project to manifest revision
+  space x          discard changes — revert to HEAD + delete untracked (asks y/N)
   space b/B/c/f    same as the direct keys above
   esc / space      close the panel without doing anything
   right-click a project row for the per-project actions as a menu

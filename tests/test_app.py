@@ -8,6 +8,7 @@ from repo_tui import git_backend, repo_backend
 from repo_tui.app import RepoTuiApp
 from repo_tui.widgets.action_panel import ActionPanel
 from repo_tui.widgets.busy_modal import BusyModal
+from repo_tui.widgets.confirm_modal import ConfirmModal
 from repo_tui.widgets.context_menu import ContextMenu
 from repo_tui.widgets.detail_pane import FileTable
 from repo_tui.widgets.diff_screen import DiffScreen
@@ -381,7 +382,7 @@ def test_immediate_actions_need_action_panel(dirty_tree, monkeypatch):
             assert calls == []
 
             await pilot.press("space")
-            await pilot.press("x")  # not an action key: exits, does nothing
+            await pilot.press("z")  # not an action key: exits, does nothing
             await pilot.pause()
             assert app.action_mode_active is False
             assert len(app.screen_stack) == 1
@@ -530,5 +531,42 @@ def test_dragging_splitter_resizes_project_list(dirty_tree):
             await pilot.mouse_up(offset=(119, 10))
             await pilot.pause()
             assert project_list.size.width == 120 - 1 - 20
+
+    asyncio.run(scenario())
+
+
+def test_discard_asks_first_then_cleans_stat_but_keeps_ignored(dirty_tree):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        base = dirty_tree / "frameworks/base"
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            _select_project(app.query_one("#project-list", ProjectList), "frameworks/base")
+            await pilot.pause()
+
+            await pilot.press("space", "x")
+            await pilot.pause()
+            assert isinstance(app.screen_stack[-1], ConfirmModal)
+            await pilot.press("enter")  # only `y` confirms
+            await pilot.press("n")
+            await pilot.pause()
+            assert len(app.screen_stack) == 1
+            assert (base / "real_change.c").exists()
+
+            await pilot.press("space", "x")
+            await pilot.pause()
+            await pilot.press("y")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert isinstance(app.screen_stack[-1], DiffScreen)
+            project = next(p for p in app.projects if p.path == "frameworks/base")
+            assert project.stat_summary == "clean"
+            assert (base / "README.md").read_text() == "hello\n"
+            assert not (base / "real_change.c").exists()
+            assert (base / "generated.pyc").exists()  # hidden by ignore rules: kept
 
     asyncio.run(scenario())

@@ -188,3 +188,20 @@ BusyModal {
     margin: 1 0;
     background: $surface;
 }
+
+ConfirmModal {
+    align: center middle;
+}
+
+#confirm-box {
+    width: 80;
+    max-width: 100%;
+    height: auto;
+    background: $panel;
+    border: round $error;
+    padding: 1 2;
+}
+
+#confirm-body {
+    margin: 1 0;
+}
