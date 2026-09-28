@@ -1,8 +1,17 @@
+import asyncio
 import subprocess
+import sys
 
 import pytest
 
-from repo_tui.repo_backend import RepoTreeError, find_repo_root, load_projects, load_tree_info
+from repo_tui.repo_backend import (
+    RepoTreeError,
+    _stream_subprocess_tty,
+    find_repo_root,
+    load_projects,
+    load_tree_info,
+    sync_args,
+)
 
 
 def _git(cwd, *args):
@@ -68,3 +77,43 @@ def test_load_projects_uses_manifest_revisions(fake_tree):
     # frameworks/base has no explicit revision -> falls back to <default revision="main">
     assert by_path["frameworks/base"].manifest_revision == "main"
     assert by_path["frameworks/base"].name == "platform/frameworks/base"
+
+
+def test_sync_args_adds_jobs_and_paths():
+    assert sync_args(["a/b"], 8) == ["repo", "sync", "--current-branch", "-j8", "a/b"]
+    assert sync_args(jobs=None) == ["repo", "sync", "--current-branch"]
+    assert sync_args(["a"], 4, detach=True) == ["repo", "sync", "-d", "-j4", "a"]
+
+
+# Mimics repo's progress.py: a \r-redrawn progress line (only when stderr is
+# a TTY), a message printed above it, then the final "done" line.
+_FAKE_REPO = r"""
+import sys
+e = sys.stderr
+print("tty:", e.isatty(), flush=True)
+for i in (1, 2):
+    e.write(f"\rFetching: {i * 50}% [4 jobs] ({i}/2) 0:0{i} | p{i}\x1b[K"); e.flush()
+e.write("\r\x1b[2Kwarning: noisy\n"); e.flush()
+e.write("\rFetching: 100% (2/2), done in 0.1s\x1b[K\n"); e.flush()
+"""
+
+
+def test_stream_subprocess_tty_splits_progress_from_output(tmp_path):
+    output, progress = [], []
+
+    async def on_output(line):
+        output.append(line)
+
+    async def on_progress(line):
+        progress.append(line)
+
+    rc = asyncio.run(
+        _stream_subprocess_tty(
+            tmp_path, [sys.executable, "-c", _FAKE_REPO], on_output, on_progress
+        )
+    )
+    assert rc == 0
+    assert output == ["tty: True", "warning: noisy", "Fetching: 100% (2/2), done in 0.1s"]
+    # redraws that arrive in one read collapse to the newest one
+    assert progress[-1] == "Fetching: 100% [4 jobs] (2/2) 0:02 | p2"
+    assert all(line.startswith("Fetching: ") for line in progress)

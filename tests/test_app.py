@@ -263,7 +263,7 @@ def test_action_panel_detach_calls_repo_sync_dash_d(dirty_tree, monkeypatch):
         app = RepoTuiApp(dirty_tree)
         calls = []
 
-        async def fake_sync_detach(repo_root, paths=None, on_output=None):
+        async def fake_sync_detach(repo_root, paths=None, on_output=None, **kwargs):
             calls.append(paths)
             return 0
 
@@ -296,7 +296,7 @@ def test_context_menu_detach_option_calls_repo_sync_dash_d(dirty_tree, monkeypat
         app = RepoTuiApp(dirty_tree)
         calls = []
 
-        async def fake_sync_detach(repo_root, paths=None, on_output=None):
+        async def fake_sync_detach(repo_root, paths=None, on_output=None, **kwargs):
             calls.append(paths)
             return 0
 
@@ -360,7 +360,7 @@ def test_immediate_actions_need_action_panel(dirty_tree, monkeypatch):
         app = RepoTuiApp(dirty_tree)
         calls = []
 
-        async def fake_sync_detach(repo_root, paths=None, on_output=None):
+        async def fake_sync_detach(repo_root, paths=None, on_output=None, **kwargs):
             calls.append(paths)
             return 0
 
@@ -419,8 +419,11 @@ def test_busy_modal_blocks_keys_while_sync_runs(dirty_tree, monkeypatch):
         app = RepoTuiApp(dirty_tree)
         release = asyncio.Event()
 
-        async def slow_sync(repo_root, paths=None, on_output=None):
-            await on_output("Fetching: 50% (1/2)")
+        seen = {}
+
+        async def slow_sync(repo_root, paths=None, on_output=None, on_progress=None, jobs=None):
+            seen["jobs"] = jobs
+            await on_progress("Fetching: 50% [3 jobs] (1/2) 0:01 | platform/build")
             await release.wait()
             return 0
 
@@ -436,6 +439,12 @@ def test_busy_modal_blocks_keys_while_sync_runs(dirty_tree, monkeypatch):
             assert isinstance(busy, BusyModal)
             bar = busy.query_one("#busy-bar")
             assert (bar.progress, bar.total) == (1, 2)
+            jobs = app.config.sync_jobs
+            assert seen["jobs"] == jobs
+            assert f"-j{jobs}" in str(busy.query_one("#busy-command").render())
+            status = str(busy.query_one("#busy-status").render())
+            assert f"jobs: {jobs} max, 3 running" in status
+            assert "platform/build" in str(busy.query_one("#busy-progress").render())
 
             show_all = app.show_all
             for key in ("space", "escape", "a", "b", "q"):

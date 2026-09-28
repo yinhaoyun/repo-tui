@@ -11,6 +11,12 @@ for: sync, forall, start, abandon.
 from __future__ import annotations
 
 import asyncio
+import fcntl
+import os
+import pty
+import re
+import struct
+import termios
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
@@ -18,6 +24,9 @@ from typing import Awaitable, Callable, Optional
 from .models import Project, TreeInfo
 
 OutputCallback = Callable[[str], Awaitable[None]]
+
+# repo's colour/erase-line escapes, stripped from output run under a pty.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
 class RepoTreeError(RuntimeError):
@@ -146,16 +155,90 @@ async def _stream_subprocess(
     return await process.wait()
 
 
+async def _stream_subprocess_tty(
+    cwd: Path,
+    args: list[str],
+    on_output: Optional[OutputCallback],
+    on_progress: Optional[OutputCallback],
+) -> int:
+    """Like _stream_subprocess, but runs the command on a pseudo-terminal.
+
+    repo only prints its live progress line ("Fetching: 45% [4 jobs] (12/27)
+    ...", redrawn in place with \r) when stderr is a TTY. Text ending in \n
+    goes to on_output; the in-place progress line goes to on_progress."""
+    master, slave = pty.openpty()
+    # Wide enough that repo doesn't elide the progress line; no output
+    # post-processing, so newlines arrive as plain \n rather than \r\n.
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 250, 0, 0))
+    attrs = termios.tcgetattr(slave)
+    attrs[1] &= ~termios.OPOST
+    termios.tcsetattr(slave, termios.TCSANOW, attrs)
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *args,
+            cwd=cwd,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=slave,
+            stderr=slave,
+            start_new_session=True,
+        )
+    finally:
+        os.close(slave)
+
+    loop = asyncio.get_running_loop()
+    buf = ""
+    try:
+        while True:
+            try:
+                chunk = await loop.run_in_executor(None, os.read, master, 4096)
+            except OSError:  # EIO: every writer to the pty has exited
+                break
+            if not chunk:
+                break
+            buf += chunk.decode(errors="replace")
+            latest_progress = ""
+            while (match := re.search(r"[\r\n]", buf)) is not None:
+                segment = _ANSI_RE.sub("", buf[: match.start()]).rstrip()
+                sep, buf = match.group(), buf[match.end() :]
+                if not segment:
+                    continue
+                if sep == "\n":
+                    if on_output is not None:
+                        await on_output(segment)
+                else:  # a progress line, overwritten by the next \r redraw
+                    latest_progress = segment
+            # Whatever follows the last \r is the progress line being drawn.
+            latest_progress = _ANSI_RE.sub("", buf).strip() or latest_progress
+            if latest_progress and on_progress is not None:
+                await on_progress(latest_progress)
+        if buf.strip() and on_output is not None:
+            await on_output(_ANSI_RE.sub("", buf).rstrip())
+    finally:
+        os.close(master)
+    return await process.wait()
+
+
+def sync_args(
+    paths: Optional[list[str]] = None, jobs: Optional[int] = None, detach: bool = False
+) -> list[str]:
+    """argv for `repo sync`; shared with the UI so it can show the command."""
+    args = ["repo", "sync", "-d" if detach else "--current-branch"]
+    if jobs:
+        args.append(f"-j{jobs}")
+    return args + list(paths or [])
+
+
 async def sync_projects(
     repo_root: Path,
     paths: Optional[list[str]] = None,
     on_output: Optional[OutputCallback] = None,
+    on_progress: Optional[OutputCallback] = None,
+    jobs: Optional[int] = None,
 ) -> int:
-    """Run `repo sync [paths...]`, streaming output line-by-line."""
-    args = ["repo", "sync", "--current-branch"]
-    if paths:
-        args.extend(paths)
-    return await _stream_subprocess(repo_root, args, on_output)
+    """Run `repo sync [-jN] [paths...]`, streaming output and live progress."""
+    return await _stream_subprocess_tty(
+        repo_root, sync_args(paths, jobs), on_output, on_progress
+    )
 
 
 async def forall(
@@ -196,11 +279,12 @@ async def sync_detach(
     repo_root: Path,
     paths: Optional[list[str]] = None,
     on_output: Optional[OutputCallback] = None,
+    on_progress: Optional[OutputCallback] = None,
+    jobs: Optional[int] = None,
 ) -> int:
-    """Run `repo sync -d [paths...]`: detach back to the manifest-pinned
+    """Run `repo sync -d [-jN] [paths...]`: detach back to the manifest-pinned
     revision, leaving whatever local branch was checked out untouched (it
     is not deleted, just no longer checked out)."""
-    args = ["repo", "sync", "-d"]
-    if paths:
-        args.extend(paths)
-    return await _stream_subprocess(repo_root, args, on_output)
+    return await _stream_subprocess_tty(
+        repo_root, sync_args(paths, jobs, detach=True), on_output, on_progress
+    )

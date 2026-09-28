@@ -142,6 +142,16 @@ available from the `Space` action panel, so a stray keypress can't trigger
 a sync. The per-project actions (`s`, `d`, `b`/`B`, `c`) are also available
 by right-clicking a project row.
 
+While a `repo` command runs, a dialog blocks all other keys and clicks. For
+`repo sync` it shows the command line, repo's live progress (percentage,
+current project, jobs running) and the output tail. Sync runs with
+`-jN` parallel jobs: one per CPU by default, or set it in the config file:
+
+```toml
+[sync]
+jobs = 4
+```
+
 ## Configuring what counts as noise
 
 Ignore rules live in a TOML file (see `repo-tui.example.toml`), loaded from

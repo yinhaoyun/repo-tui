@@ -38,3 +38,8 @@ show_all_default = false
 # machine with fast local disk/SSD and many CPU cores; lower it on slow or
 # network-backed storage.
 max_workers = 16
+
+[sync]
+# Parallel jobs for `repo sync -jN` (sync, sync all, detach). Default: the
+# number of CPUs. Lower it if your git server throttles you.
+# jobs = 8

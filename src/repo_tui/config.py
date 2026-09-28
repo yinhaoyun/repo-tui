@@ -25,10 +25,16 @@ except ModuleNotFoundError:  # pragma: no cover - exercised on Python <3.11
 from .ignore import DEFAULT_IGNORE_PATTERNS, IgnoreRules
 
 
+def default_sync_jobs() -> int:
+    """Parallel jobs for `repo sync -j`: one per CPU."""
+    return os.cpu_count() or 4
+
+
 @dataclass
 class Config:
     show_all_default: bool = False
     max_workers: int = 16
+    sync_jobs: int = field(default_factory=default_sync_jobs)
     ignore: IgnoreRules = field(default_factory=IgnoreRules)
     source: Path | None = None
 
@@ -65,6 +71,7 @@ def _parse(path: Path) -> Config:
     return Config(
         show_all_default=bool(display.get("show_all_default", False)),
         max_workers=int(data.get("performance", {}).get("max_workers", 16)),
+        sync_jobs=int(data.get("sync", {}).get("jobs", default_sync_jobs())),
         ignore=IgnoreRules(patterns=list(patterns), per_project=dict(per_project)),
         source=path,
     )

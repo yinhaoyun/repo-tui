@@ -177,12 +177,15 @@ class RepoTuiApp(App):
     # -- per-project actions: shared by the action keys and the
     #    right-click context menu ----------------------------------------
 
-    async def _run_and_refresh(self, title: str, coro_factory) -> None:
+    async def _run_and_refresh(
+        self, title: str, coro_factory, command: str = "", jobs: int | None = None
+    ) -> None:
         """Run a repo command behind a blocking BusyModal, refresh status,
-        then show the command's output."""
+        then show the command's output. `coro_factory(on_output, on_progress)`
+        starts the command; `command`/`jobs` are only shown in the dialog."""
         header = self.query_one("#header", HeaderBar)
         header.set_syncing(True)
-        busy = BusyModal(title)
+        busy = BusyModal(title, command=command, jobs=jobs)
         await self.push_screen(busy)
         log_lines: list[str] = []
 
@@ -190,9 +193,12 @@ class RepoTuiApp(App):
             log_lines.append(line)
             busy.add_output(line)
 
+        async def on_progress(line: str) -> None:
+            busy.set_progress(line)
+
         try:
             try:
-                returncode = await coro_factory(on_output)
+                returncode = await coro_factory(on_output, on_progress)
             except OSError as exc:  # e.g. `repo` not on PATH
                 log_lines.append(f"error: {exc}")
                 returncode = None
@@ -208,9 +214,15 @@ class RepoTuiApp(App):
         self.run_worker(
             self._run_and_refresh(
                 f"repo sync: {project.path}",
-                lambda on_output: repo_backend.sync_projects(
-                    self.repo_root, [project.path], on_output=on_output
+                lambda on_output, on_progress: repo_backend.sync_projects(
+                    self.repo_root,
+                    [project.path],
+                    on_output=on_output,
+                    on_progress=on_progress,
+                    jobs=self.config.sync_jobs,
                 ),
+                command=" ".join(repo_backend.sync_args([project.path], self.config.sync_jobs)),
+                jobs=self.config.sync_jobs,
             ),
             exclusive=True,
             group="sync",
@@ -220,7 +232,14 @@ class RepoTuiApp(App):
         self.run_worker(
             self._run_and_refresh(
                 "repo sync (all)",
-                lambda on_output: repo_backend.sync_projects(self.repo_root, on_output=on_output),
+                lambda on_output, on_progress: repo_backend.sync_projects(
+                    self.repo_root,
+                    on_output=on_output,
+                    on_progress=on_progress,
+                    jobs=self.config.sync_jobs,
+                ),
+                command=" ".join(repo_backend.sync_args(jobs=self.config.sync_jobs)),
+                jobs=self.config.sync_jobs,
             ),
             exclusive=True,
             group="sync",
@@ -230,9 +249,17 @@ class RepoTuiApp(App):
         self.run_worker(
             self._run_and_refresh(
                 f"repo sync -d: {project.path}",
-                lambda on_output: repo_backend.sync_detach(
-                    self.repo_root, [project.path], on_output=on_output
+                lambda on_output, on_progress: repo_backend.sync_detach(
+                    self.repo_root,
+                    [project.path],
+                    on_output=on_output,
+                    on_progress=on_progress,
+                    jobs=self.config.sync_jobs,
                 ),
+                command=" ".join(
+                    repo_backend.sync_args([project.path], self.config.sync_jobs, detach=True)
+                ),
+                jobs=self.config.sync_jobs,
             ),
             exclusive=True,
             group="sync",
@@ -242,7 +269,7 @@ class RepoTuiApp(App):
         self.run_worker(
             self._run_and_refresh(
                 f"repo checkout {branch}: {project.path}",
-                lambda on_output: repo_backend.checkout_branch(
+                lambda on_output, _progress: repo_backend.checkout_branch(
                     self.repo_root, branch, [project.path], on_output=on_output
                 ),
             ),
@@ -288,7 +315,7 @@ class RepoTuiApp(App):
             self.run_worker(
                 self._run_and_refresh(
                     f"repo start {branch}: {project.path}",
-                    lambda on_output: repo_backend.start_branch(
+                    lambda on_output, _progress: repo_backend.start_branch(
                         self.repo_root, branch, [project.path], on_output=on_output
                     ),
                 ),
@@ -367,7 +394,7 @@ class RepoTuiApp(App):
             self.run_worker(
                 self._run_and_refresh(
                     f"forall: {command}",
-                    lambda on_output: repo_backend.forall(
+                    lambda on_output, _progress: repo_backend.forall(
                         self.repo_root, command, on_output=on_output
                     ),
                 ),
