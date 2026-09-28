@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from textual.binding import Binding
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
@@ -45,6 +46,11 @@ class ProjectSummary(Static):
 
 
 class FileTable(DataTable):
+
+    BINDINGS = [
+        Binding("j", "cursor_down", show=False),
+        Binding("k", "cursor_up", show=False),
+    ]
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.cursor_type = "row"

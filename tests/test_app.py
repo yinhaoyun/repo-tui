@@ -3,11 +3,15 @@ import subprocess
 
 import pytest
 
+from repo_tui import repo_backend
 from repo_tui.app import RepoTuiApp
+from repo_tui.widgets.action_panel import ActionPanel
+from repo_tui.widgets.context_menu import ContextMenu
 from repo_tui.widgets.detail_pane import FileTable
 from repo_tui.widgets.diff_screen import DiffScreen
 from repo_tui.widgets.help_modal import HelpModal
 from repo_tui.widgets.project_list import ProjectList
+from repo_tui.widgets.prompt_modal import PromptModal
 
 _GIT_ENV = {
     "GIT_AUTHOR_NAME": "t",
@@ -57,6 +61,7 @@ def dirty_tree(tmp_path):
     (base / "generated.pyc").write_text("noise\n")
     (base / "real_change.c").write_text("int x;\n")
     _git(base, "add", "real_change.c")
+    _git(base, "branch", "topic-b")  # gives frameworks/base a 2nd local branch
 
     return root
 
@@ -126,12 +131,12 @@ def test_help_modal_closes_on_q_without_quitting_app(dirty_tree):
             assert not isinstance(app.screen_stack[-1], HelpModal)
 
             # app must still be alive and responsive to further bindings
-            await pilot.press("ctrl+b")
+            await pilot.press("space")
             await pilot.pause()
-            assert app.leader_active is True
+            assert app.action_mode_active is True
             await pilot.press("escape")
             await pilot.pause()
-            assert app.leader_active is False
+            assert app.action_mode_active is False
 
     asyncio.run(scenario())
 
@@ -155,5 +160,254 @@ def test_filter_narrows_visible_projects(dirty_tree):
             await pilot.pause()
             assert project_list.row_count == 1
             assert project_list.project_at_cursor().path == "build/make"
+
+    asyncio.run(scenario())
+
+
+def _select_project(project_list, path):
+    for i in range(project_list.row_count):
+        project_list.move_cursor(row=i)
+        if project_list.project_at_cursor().path == path:
+            return
+    raise AssertionError(f"project {path!r} not found in list")
+
+
+def test_right_click_opens_context_menu_for_clicked_project(dirty_tree):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("a")
+            await pilot.pause()
+
+            project_list = app.query_one("#project-list", ProjectList)
+            # row 1 (y offset 2, after the header) is the second row
+            await pilot.click(ProjectList, offset=(5, 2), button=3)
+            await pilot.pause()
+
+            assert isinstance(app.screen_stack[-1], ContextMenu)
+            assert project_list.project_at_cursor() is not None
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not isinstance(app.screen_stack[-1], ContextMenu)
+
+    asyncio.run(scenario())
+
+
+def test_switch_branch_shows_picker_when_multiple_local_branches(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        calls = []
+
+        async def fake_checkout(repo_root, branch, paths=None, on_output=None):
+            calls.append((branch, paths))
+            return 0
+
+        monkeypatch.setattr(repo_backend, "checkout_branch", fake_checkout)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("a")
+            await pilot.pause()
+
+            project_list = app.query_one("#project-list", ProjectList)
+            _select_project(project_list, "frameworks/base")
+            await pilot.pause()
+
+            await pilot.press("B")
+            await pilot.pause()
+
+            menu = app.screen_stack[-1]
+            assert isinstance(menu, ContextMenu)
+            option_list = menu.query_one("OptionList")
+            ids = [o.id for o in option_list._options]
+            assert ids == ["topic-b"]  # excludes the current branch ("main")
+
+            option_list.highlighted = 0
+            await pilot.press("enter")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert calls == [("topic-b", ["frameworks/base"])]
+
+    asyncio.run(scenario())
+
+
+def test_switch_branch_falls_back_to_prompt_when_no_other_branches(dirty_tree):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("a")
+            await pilot.pause()
+
+            project_list = app.query_one("#project-list", ProjectList)
+            _select_project(project_list, "build/make")  # only has "main"
+            await pilot.pause()
+
+            await pilot.press("B")
+            await pilot.pause()
+
+            assert isinstance(app.screen_stack[-1], PromptModal)
+
+    asyncio.run(scenario())
+
+
+def test_action_panel_detach_calls_repo_sync_dash_d(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        calls = []
+
+        async def fake_sync_detach(repo_root, paths=None, on_output=None):
+            calls.append(paths)
+            return 0
+
+        monkeypatch.setattr(repo_backend, "sync_detach", fake_sync_detach)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("a")
+            await pilot.pause()
+
+            project_list = app.query_one("#project-list", ProjectList)
+            _select_project(project_list, "frameworks/base")
+            await pilot.pause()
+
+            await pilot.press("space")
+            await pilot.press("d")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert calls == [["frameworks/base"]]
+            assert isinstance(app.screen_stack[-1], DiffScreen)
+
+    asyncio.run(scenario())
+
+
+def test_context_menu_detach_option_calls_repo_sync_dash_d(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        calls = []
+
+        async def fake_sync_detach(repo_root, paths=None, on_output=None):
+            calls.append(paths)
+            return 0
+
+        monkeypatch.setattr(repo_backend, "sync_detach", fake_sync_detach)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("a")
+            await pilot.pause()
+
+            project_list = app.query_one("#project-list", ProjectList)
+            _select_project(project_list, "frameworks/base")
+            await pilot.pause()
+
+            await pilot.click(ProjectList, offset=(5, 1), button=3)
+            await pilot.pause()
+            menu = app.screen_stack[-1]
+            assert isinstance(menu, ContextMenu)
+            option_list = menu.query_one("OptionList")
+            ids = [o.id for o in option_list._options]
+            detach_index = ids.index("detach")
+            option_list.highlighted = detach_index
+            await pilot.press("enter")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert calls == [["frameworks/base"]]
+
+    asyncio.run(scenario())
+
+
+def test_action_panel_has_no_timeout_and_shows_target(dirty_tree):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("a")
+            await pilot.pause()
+            _select_project(app.query_one("#project-list", ProjectList), "build/make")
+            await pilot.pause()
+
+            await pilot.press("space")
+            await asyncio.sleep(3.5)  # the old leader timed out after 3s
+            await pilot.pause()
+            panel = app.screen_stack[-1]
+            assert isinstance(panel, ActionPanel)
+            assert "build/make" in panel.query_one("#action-box").border_title
+
+            await pilot.press("space")  # space again exits
+            await pilot.pause()
+            assert app.action_mode_active is False
+
+    asyncio.run(scenario())
+
+
+def test_immediate_actions_need_action_panel(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        calls = []
+
+        async def fake_sync_detach(repo_root, paths=None, on_output=None):
+            calls.append(paths)
+            return 0
+
+        monkeypatch.setattr(repo_backend, "sync_detach", fake_sync_detach)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("d")  # bare d: not bound on the top layer
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert calls == []
+
+            await pilot.press("space")
+            await pilot.press("x")  # not an action key: exits, does nothing
+            await pilot.pause()
+            assert app.action_mode_active is False
+            assert len(app.screen_stack) == 1
+
+    asyncio.run(scenario())
+
+
+def test_app_keys_are_ignored_while_a_modal_is_open(dirty_tree):
+    # Top-level action keys (b/B/c/f) must not fire behind a popup; Textual
+    # stops app bindings at modal screens, this guards that assumption.
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("a")
+            await pilot.pause()
+            _select_project(app.query_one("#project-list", ProjectList), "build/make")
+            await pilot.pause()
+
+            await pilot.press("B")  # build/make has no other branch -> prompt
+            await pilot.pause()
+            assert isinstance(app.screen_stack[-1], PromptModal)
+
+            show_all = app.show_all
+            await pilot.press("escape")
+            await pilot.pause()
+            app._open_context_menu(app._selected_project())
+            await pilot.pause()
+            await pilot.press("a")
+            await pilot.press("f")
+            await pilot.pause()
+            assert isinstance(app.screen_stack[-1], ContextMenu)
+            assert app.show_all == show_all
 
     asyncio.run(scenario())

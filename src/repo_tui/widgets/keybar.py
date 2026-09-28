@@ -1,6 +1,6 @@
-"""Bottom key-binding bar, tmux-style: a Ctrl+B leader reveals a second set
-of bindings for actions (sync, forall, branch...), while the always-on keys
-(navigation, filter, help, quit) show by default.
+"""Bottom key-binding bar: the always-on keys. Actions that run immediately
+(sync, detach, sync all) live behind Space, which opens the ActionPanel
+listing every action key.
 """
 
 from __future__ import annotations
@@ -8,20 +8,12 @@ from __future__ import annotations
 from textual.widgets import Static
 
 TOP_LEVEL_HINT = (
-    "[b]^B[/] leader  [b]?[/] help  [b]/[/] filter  [b]a[/] show-all  "
-    "[b]r[/] refresh  [b]tab[/] switch pane  [b]q[/] quit"
-)
-
-LEADER_HINT = (
-    "[b yellow]^B…[/] [b]s[/] sync project  [b]S[/] sync all  "
-    "[b]f[/] forall cmd  [b]b[/] start branch  [b]c[/] copy path  "
-    "[b]esc[/] cancel"
+    "[b]space[/] actions  [b]?[/] help │ "
+    "[b]b[/]/[b]B[/] new/switch branch  [b]c[/] copy  [b]f[/] forall │ "
+    "[b]/[/] filter  [b]a[/] all  [b]i[/] ignored  [b]r[/] refresh │ [b]q[/] quit"
 )
 
 
 class KeyBar(Static):
     def show_top_level(self) -> None:
         self.update(TOP_LEVEL_HINT)
-
-    def show_leader(self) -> None:
-        self.update(LEADER_HINT)

@@ -14,12 +14,14 @@ from . import config as config_mod
 from . import git_backend
 from . import repo_backend
 from .models import Project, TreeInfo
+from .widgets.action_panel import ActionPanel
+from .widgets.context_menu import ContextMenu
 from .widgets.detail_pane import DetailPane, FileTable
 from .widgets.diff_screen import DiffScreen
 from .widgets.header_bar import HeaderBar
 from .widgets.help_modal import HelpModal
 from .widgets.keybar import KeyBar
-from .widgets.project_list import ProjectHighlighted, ProjectList
+from .widgets.project_list import ProjectContextMenuRequested, ProjectHighlighted, ProjectList
 from .widgets.prompt_modal import PromptModal
 
 
@@ -46,13 +48,14 @@ class RepoTuiApp(App):
         Binding("i", "toggle_show_ignored", "Show ignored"),
         Binding("r", "refresh_status", "Refresh"),
         Binding("q", "quit", "Quit"),
-        Binding("ctrl+b", "activate_leader", "Leader", show=False),
-        Binding("escape", "cancel_leader", "Cancel leader", show=False),
-        Binding("s", "leader_sync_selected", "Sync project", show=False),
-        Binding("S", "leader_sync_all", "Sync all", show=False),
-        Binding("f", "leader_forall", "Forall", show=False),
-        Binding("b", "leader_start_branch", "Start branch", show=False),
-        Binding("c", "leader_copy_path", "Copy path", show=False),
+        # Safe actions (each opens a prompt/picker first, or is harmless) sit on
+        # the top layer; ones that run immediately (sync, detach, sync all) are
+        # only reachable through the Space action panel.
+        Binding("b", "start_branch", "New branch"),
+        Binding("B", "switch_branch", "Switch branch"),
+        Binding("c", "copy_path", "Copy path"),
+        Binding("f", "forall", "Forall"),
+        Binding("space", "open_action_panel", "Actions"),
     ]
 
     def __init__(self, repo_root: Path) -> None:
@@ -64,8 +67,6 @@ class RepoTuiApp(App):
         self.show_all = self.config.show_all_default
         self.show_ignored = False
         self.search = ""
-        self.leader_active = False
-        self._leader_timer = None
 
     def compose(self) -> ComposeResult:
         yield HeaderBar(id="header")
@@ -98,6 +99,9 @@ class RepoTuiApp(App):
         project = self.query_one("#project-list", ProjectList).project_at_cursor()
         self.query_one("#detail-pane", DetailPane).show_project(project, self.show_ignored)
 
+    def _selected_project(self) -> Project | None:
+        return self.query_one("#project-list", ProjectList).project_at_cursor()
+
     async def _refresh(self) -> None:
         header = self.query_one("#header", HeaderBar)
         header.set_syncing(True)
@@ -119,12 +123,15 @@ class RepoTuiApp(App):
             message.project, self.show_ignored
         )
 
+    def on_project_context_menu_requested(self, message: ProjectContextMenuRequested) -> None:
+        self._open_context_menu(message.project)
+
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         # Fires for both ProjectList and FileTable (Enter key, or mouse click
         # on a row) since both are DataTables; only FileTable rows open a diff.
         if event.data_table.id != "file-table":
             return
-        project = self.query_one("#project-list", ProjectList).project_at_cursor()
+        project = self._selected_project()
         file_table = self.query_one("#file-table", FileTable)
         file = file_table.file_at_cursor()
         if project is None or file is None:
@@ -166,54 +173,8 @@ class RepoTuiApp(App):
         text = await asyncio.to_thread(git_backend.read_file_diff, project, rel_path)
         self.push_screen(DiffScreen(f"{project.path}/{rel_path}", text))
 
-    # -- leader (Ctrl+B) actions -----------------------------------------
-
-    def action_activate_leader(self) -> None:
-        self.leader_active = True
-        self.query_one("#keybar", KeyBar).show_leader()
-        self._leader_timer = self.set_timer(3.0, self.action_cancel_leader)
-
-    def action_cancel_leader(self) -> None:
-        self.leader_active = False
-        self.query_one("#keybar", KeyBar).show_top_level()
-
-    def _consume_leader(self) -> bool:
-        """Return True and reset leader state, iff leader mode was active."""
-        if not self.leader_active:
-            return False
-        self.action_cancel_leader()
-        return True
-
-    def action_leader_sync_selected(self) -> None:
-        if not self._consume_leader():
-            return
-        project = self.query_one("#project-list", ProjectList).project_at_cursor()
-        if project is None:
-            return
-        self.run_worker(
-            self._run_and_refresh(
-                "repo sync (selected)",
-                lambda on_output: repo_backend.sync_projects(
-                    self.repo_root, [project.path], on_output=on_output
-                ),
-            ),
-            exclusive=True,
-            group="sync",
-        )
-
-    def action_leader_sync_all(self) -> None:
-        if not self._consume_leader():
-            return
-        self.run_worker(
-            self._run_and_refresh(
-                "repo sync (all)",
-                lambda on_output: repo_backend.sync_projects(
-                    self.repo_root, on_output=on_output
-                ),
-            ),
-            exclusive=True,
-            group="sync",
-        )
+    # -- per-project actions: shared by the action keys and the
+    #    right-click context menu ----------------------------------------
 
     async def _run_and_refresh(self, title: str, coro_factory) -> None:
         header = self.query_one("#header", HeaderBar)
@@ -230,67 +191,193 @@ class RepoTuiApp(App):
         await self._refresh()
         self.push_screen(DiffScreen(title, "\n".join(log_lines)))
 
-    def action_leader_forall(self) -> None:
-        if not self._consume_leader():
-            return
-
-        async def handle(command: str | None) -> None:
-            if not command:
-                return
-            log_lines: list[str] = []
-
-            async def on_output(line: str) -> None:
-                log_lines.append(line)
-
-            header = self.query_one("#header", HeaderBar)
-            header.set_syncing(True)
-            try:
-                await repo_backend.forall(self.repo_root, command, on_output=on_output)
-            finally:
-                header.set_syncing(False)
-            self.push_screen(DiffScreen(f"forall: {command}", "\n".join(log_lines)))
-            await self._refresh()
-
-        self.push_screen(
-            PromptModal("Command to run in every project (repo forall -c):", "e.g. git log -1"),
-            handle,
+    def _sync_project(self, project: Project) -> None:
+        self.run_worker(
+            self._run_and_refresh(
+                f"repo sync: {project.path}",
+                lambda on_output: repo_backend.sync_projects(
+                    self.repo_root, [project.path], on_output=on_output
+                ),
+            ),
+            exclusive=True,
+            group="sync",
         )
 
-    def action_leader_start_branch(self) -> None:
-        if not self._consume_leader():
-            return
-        project = self.query_one("#project-list", ProjectList).project_at_cursor()
-        if project is None:
-            return
+    def _sync_all(self) -> None:
+        self.run_worker(
+            self._run_and_refresh(
+                "repo sync (all)",
+                lambda on_output: repo_backend.sync_projects(self.repo_root, on_output=on_output),
+            ),
+            exclusive=True,
+            group="sync",
+        )
 
-        async def handle(branch: str | None) -> None:
+    def _detach_project(self, project: Project) -> None:
+        self.run_worker(
+            self._run_and_refresh(
+                f"repo sync -d: {project.path}",
+                lambda on_output: repo_backend.sync_detach(
+                    self.repo_root, [project.path], on_output=on_output
+                ),
+            ),
+            exclusive=True,
+            group="sync",
+        )
+
+    def _checkout_branch(self, project: Project, branch: str) -> None:
+        self.run_worker(
+            self._run_and_refresh(
+                f"repo checkout {branch}: {project.path}",
+                lambda on_output: repo_backend.checkout_branch(
+                    self.repo_root, branch, [project.path], on_output=on_output
+                ),
+            ),
+            exclusive=True,
+            group="branch",
+        )
+
+    def _prompt_switch_branch(self, project: Project) -> None:
+        other_branches = [b for b in project.local_branches if b != project.current_branch]
+
+        if other_branches:
+
+            def handle_choice(branch: str | None) -> None:
+                if branch:
+                    self._checkout_branch(project, branch)
+
+            self.push_screen(
+                ContextMenu(
+                    f"Switch branch — {project.path}",
+                    [(b, b) for b in other_branches],
+                ),
+                handle_choice,
+            )
+        else:
+
+            def handle_text(branch: str | None) -> None:
+                if branch:
+                    self._checkout_branch(project, branch)
+
+            self.push_screen(
+                PromptModal(
+                    f"{project.path} has no other local branches. "
+                    "Type an existing topic branch name to switch to:",
+                    "branch name",
+                ),
+                handle_text,
+            )
+
+    def _prompt_start_branch(self, project: Project) -> None:
+        def handle(branch: str | None) -> None:
             if not branch:
                 return
-            log_lines: list[str] = []
-
-            async def on_output(line: str) -> None:
-                log_lines.append(line)
-
-            await repo_backend.start_branch(
-                self.repo_root, branch, [project.path], on_output=on_output
+            self.run_worker(
+                self._run_and_refresh(
+                    f"repo start {branch}: {project.path}",
+                    lambda on_output: repo_backend.start_branch(
+                        self.repo_root, branch, [project.path], on_output=on_output
+                    ),
+                ),
+                exclusive=True,
+                group="branch",
             )
-            self.push_screen(DiffScreen(f"repo start {branch}", "\n".join(log_lines)))
-            await self._refresh()
 
         self.push_screen(
-            PromptModal(f"New/checkout branch name for {project.path}:", "branch name"),
+            PromptModal(f"New branch name for {project.path}:", "branch name"),
             handle,
         )
 
-    def action_leader_copy_path(self) -> None:
-        if not self._consume_leader():
-            return
-        project = self.query_one("#project-list", ProjectList).project_at_cursor()
-        if project is None:
-            return
+    def _copy_project_path(self, project: Project) -> None:
         text = str(project.abs_path)
         try:
             self.copy_to_clipboard(text)
             self.notify(f"Copied: {text}")
         except Exception:
             self.notify(text, title="Project path")
+
+    def _open_context_menu(self, project: Project) -> None:
+        options = [
+            ("sync", "Sync (repo sync)"),
+            ("detach", "Detach to manifest revision (repo sync -d)"),
+            ("switch", "Switch branch…"),
+            ("start", "Start new branch…"),
+            ("copy", "Copy path"),
+        ]
+
+        def handle(choice: str | None) -> None:
+            if choice == "sync":
+                self._sync_project(project)
+            elif choice == "detach":
+                self._detach_project(project)
+            elif choice == "switch":
+                self._prompt_switch_branch(project)
+            elif choice == "start":
+                self._prompt_start_branch(project)
+            elif choice == "copy":
+                self._copy_project_path(project)
+
+        self.push_screen(ContextMenu(project.path, options), handle)
+
+    # -- action panel (Space) and the actions it dispatches -------------
+
+    @property
+    def action_mode_active(self) -> bool:
+        return isinstance(self.screen, ActionPanel)
+
+    def action_open_action_panel(self) -> None:
+        project = self._selected_project()
+
+        def handle(action: str | None) -> None:
+            if action:
+                getattr(self, f"action_{action}")()
+
+        self.push_screen(ActionPanel(project.path if project else None), handle)
+
+    def action_sync_selected(self) -> None:
+        project = self._selected_project()
+        if project is not None:
+            self._sync_project(project)
+
+    def action_sync_all(self) -> None:
+        self._sync_all()
+
+    def action_detach(self) -> None:
+        project = self._selected_project()
+        if project is not None:
+            self._detach_project(project)
+
+    def action_forall(self) -> None:
+        def handle(command: str | None) -> None:
+            if not command:
+                return
+            self.run_worker(
+                self._run_and_refresh(
+                    f"forall: {command}",
+                    lambda on_output: repo_backend.forall(
+                        self.repo_root, command, on_output=on_output
+                    ),
+                ),
+                exclusive=True,
+                group="forall",
+            )
+
+        self.push_screen(
+            PromptModal("Command to run in every project (repo forall -c):", "e.g. git log -1"),
+            handle,
+        )
+
+    def action_start_branch(self) -> None:
+        project = self._selected_project()
+        if project is not None:
+            self._prompt_start_branch(project)
+
+    def action_switch_branch(self) -> None:
+        project = self._selected_project()
+        if project is not None:
+            self._prompt_switch_branch(project)
+
+    def action_copy_path(self) -> None:
+        project = self._selected_project()
+        if project is not None:
+            self._copy_project_path(project)

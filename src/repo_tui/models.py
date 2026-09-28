@@ -46,6 +46,7 @@ class Project:
     ahead: int = 0
     behind: int = 0
     local_branch_count: int = 0
+    local_branches: list[str] = field(default_factory=list)
 
     added: int = 0
     deleted: int = 0

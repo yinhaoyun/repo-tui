@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from textual import events
+from textual.binding import Binding
 from textual.message import Message
 from textual.widgets import DataTable
 
@@ -16,8 +18,21 @@ class ProjectHighlighted(Message):
         super().__init__()
 
 
+class ProjectContextMenuRequested(Message):
+    """Sent on a right-click over a project row."""
+
+    def __init__(self, project: Project) -> None:
+        self.project = project
+        super().__init__()
+
+
 class ProjectList(DataTable):
     """A DataTable of projects, filterable and sortable by "changed" state."""
+
+    BINDINGS = [
+        Binding("j", "cursor_down", show=False),
+        Binding("k", "cursor_up", show=False),
+    ]
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -84,3 +99,14 @@ class ProjectList(DataTable):
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         self.post_message(ProjectHighlighted(self.project_at_cursor()))
+
+    def on_click(self, event: events.Click) -> None:
+        if event.button != 3:
+            return
+        row_index = event.style.meta.get("row")
+        if row_index is None or not (0 <= row_index < len(self._row_paths)):
+            return
+        self.move_cursor(row=row_index)
+        project = self.project_at_cursor()
+        if project is not None:
+            self.post_message(ProjectContextMenuRequested(project))

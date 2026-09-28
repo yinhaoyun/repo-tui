@@ -109,16 +109,17 @@ def collect_project_status(project: Project, ignore: IgnoreRules) -> Project:
             f.added, f.deleted = a1 + a2, d1 + d2
             f.ignored = ignore.matches(project.name, f.path)
 
-        branch_count_out = _run_git(
-            project.abs_path, ["for-each-ref", "--format=%(refname)", "refs/heads/"]
+        branches_out = _run_git(
+            project.abs_path, ["for-each-ref", "--format=%(refname:short)", "refs/heads/"]
         )
-        local_branch_count = len([l for l in branch_count_out.splitlines() if l.strip()])
+        local_branches = [b for b in branches_out.splitlines() if b.strip()]
 
         project.current_branch = branch
         project.is_detached = detached
         project.ahead = ahead
         project.behind = behind
-        project.local_branch_count = local_branch_count
+        project.local_branch_count = len(local_branches)
+        project.local_branches = local_branches
         project.files = files
         project.added = sum(f.added for f in files if not f.ignored)
         project.deleted = sum(f.deleted for f in files if not f.ignored)

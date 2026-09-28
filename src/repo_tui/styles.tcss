@@ -98,3 +98,49 @@ PromptModal {
     height: auto;
     padding-bottom: 1;
 }
+
+ContextMenu {
+    align: center middle;
+}
+
+#menu-box {
+    width: 50;
+    height: auto;
+    max-height: 80%;
+    background: $panel;
+    border: round $primary;
+    padding: 1 2;
+}
+
+#menu-title {
+    height: auto;
+    padding-bottom: 1;
+}
+
+ActionPanel {
+    align: left bottom;
+    background: $background 30%;
+}
+
+#action-box {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    margin: 0 1;
+    background: $panel;
+    border: round $warning;
+    border-title-color: $warning;
+    border-title-style: bold;
+    padding: 0 2;
+}
+
+#action-keys {
+    width: auto;
+}
+
+#action-bar {
+    height: 1;
+    width: 100%;
+    background: $warning 40%;
+    padding: 0 1;
+}

@@ -178,3 +178,29 @@ async def start_branch(
     """Run `repo start <branch> [paths...]`."""
     args = ["repo", "start", branch_name, *(paths or ["."])]
     return await _stream_subprocess(repo_root, args, on_output)
+
+
+async def checkout_branch(
+    repo_root: Path,
+    branch_name: str,
+    paths: Optional[list[str]] = None,
+    on_output: Optional[OutputCallback] = None,
+) -> int:
+    """Run `repo checkout <branch> [paths...]`: switch to an existing
+    local topic branch (one previously created with `repo start`)."""
+    args = ["repo", "checkout", branch_name, *(paths or [])]
+    return await _stream_subprocess(repo_root, args, on_output)
+
+
+async def sync_detach(
+    repo_root: Path,
+    paths: Optional[list[str]] = None,
+    on_output: Optional[OutputCallback] = None,
+) -> int:
+    """Run `repo sync -d [paths...]`: detach back to the manifest-pinned
+    revision, leaving whatever local branch was checked out untouched (it
+    is not deleted, just no longer checked out)."""
+    args = ["repo", "sync", "-d"]
+    if paths:
+        args.extend(paths)
+    return await _stream_subprocess(repo_root, args, on_output)

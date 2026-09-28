@@ -100,9 +100,11 @@ package elsewhere without its `.git`), it'll tell you to re-clone instead.
 - **Right pane**: full detail for the selected project — branch info, whether
   it's off the manifest-pinned revision, and the file list. Select a file and
   press Enter (or click) to see its full diff.
-- **Bottom bar**: available keys, tmux-style — normal keys are always shown;
-  press `Ctrl+B` to reveal a second layer of action keys (sync, forall,
-  branch, copy path), same as tmux's leader-key convention.
+- **Bottom bar**: the always-on keys. Press `Space` to open the action
+  panel — a box listing every action key, grouped into "this project" and
+  "whole tree", with the target project in its title. It stays open until
+  you press an action key (runs it, then closes), or `Esc`/`Space` to exit.
+  Right-clicking a project row opens the per-project actions as a menu.
 
 A project counts as "changed" if it has any non-ignored file changes, is
 ahead/behind its upstream, or is checked out on a branch other than the one
@@ -117,17 +119,28 @@ sync` — is *not* treated as changed on its own.
 | `↑`/`↓`, `j`/`k`, mouse | navigate / select |
 | `tab` | switch focus between panes |
 | `enter` / click (on a file row) | open that file's diff |
+| right-click (on a project row) | open the project context menu |
 | `?` | help |
 | `/` | filter projects by path/name |
 | `a` | toggle show-all vs. hide-unchanged |
 | `i` | toggle showing ignored files in the file list |
 | `r` | refresh (re-run git status across the tree) |
 | `q` | quit |
-| `Ctrl+B` then `s` | `repo sync` the selected project |
-| `Ctrl+B` then `S` | `repo sync` the whole tree |
-| `Ctrl+B` then `f` | `repo forall -c <command>` across the tree |
-| `Ctrl+B` then `b` | `repo start <branch>` on the selected project |
-| `Ctrl+B` then `c` | copy the selected project's absolute path |
+| `b` | `repo start <branch>` — create a new branch on the selected project (prompts for a name) |
+| `B` | `repo checkout <branch>` — switch to an existing local branch (pick from a list, or type one) |
+| `c` | copy the selected project's absolute path |
+| `f` | `repo forall -c <command>` across the tree (prompts for the command) |
+| `Space` then `s` | `repo sync` the selected project |
+| `Space` then `S` | `repo sync` the whole tree |
+| `Space` then `d` | `repo sync -d` — detach the selected project to its manifest revision |
+| `Space` then `b`/`B`/`c`/`f` | same as the direct keys |
+| `Esc` / `Space` (in the panel) | close the action panel without doing anything |
+
+Keys that ask before doing anything (`b`, `B`, `c`, `f`) work directly.
+Keys that run straight away and change the checkout (`s`, `S`, `d`) are only
+available from the `Space` action panel, so a stray keypress can't trigger
+a sync. The per-project actions (`s`, `d`, `b`/`B`, `c`) are also available
+by right-clicking a project row.
 
 ## Configuring what counts as noise
 
