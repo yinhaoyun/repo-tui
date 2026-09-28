@@ -15,6 +15,7 @@ from . import git_backend
 from . import repo_backend
 from .models import Project, TreeInfo
 from .widgets.action_panel import ActionPanel
+from .widgets.busy_modal import BusyModal
 from .widgets.context_menu import ContextMenu
 from .widgets.detail_pane import DetailPane, FileTable
 from .widgets.diff_screen import DiffScreen
@@ -177,19 +178,31 @@ class RepoTuiApp(App):
     #    right-click context menu ----------------------------------------
 
     async def _run_and_refresh(self, title: str, coro_factory) -> None:
+        """Run a repo command behind a blocking BusyModal, refresh status,
+        then show the command's output."""
         header = self.query_one("#header", HeaderBar)
         header.set_syncing(True)
+        busy = BusyModal(title)
+        await self.push_screen(busy)
         log_lines: list[str] = []
 
         async def on_output(line: str) -> None:
             log_lines.append(line)
+            busy.add_output(line)
 
         try:
-            await coro_factory(on_output)
+            try:
+                returncode = await coro_factory(on_output)
+            except OSError as exc:  # e.g. `repo` not on PATH
+                log_lines.append(f"error: {exc}")
+                returncode = None
+            busy.set_phase("Refreshing status…")
+            await self._refresh()
         finally:
             header.set_syncing(False)
-        await self._refresh()
-        self.push_screen(DiffScreen(title, "\n".join(log_lines)))
+            await busy.dismiss()
+        result = "done" if returncode == 0 else f"failed (exit {returncode})"
+        self.push_screen(DiffScreen(f"{title} — {result}", "\n".join(log_lines)))
 
     def _sync_project(self, project: Project) -> None:
         self.run_worker(

@@ -6,6 +6,7 @@ import pytest
 from repo_tui import repo_backend
 from repo_tui.app import RepoTuiApp
 from repo_tui.widgets.action_panel import ActionPanel
+from repo_tui.widgets.busy_modal import BusyModal
 from repo_tui.widgets.context_menu import ContextMenu
 from repo_tui.widgets.detail_pane import FileTable
 from repo_tui.widgets.diff_screen import DiffScreen
@@ -409,5 +410,45 @@ def test_app_keys_are_ignored_while_a_modal_is_open(dirty_tree):
             await pilot.pause()
             assert isinstance(app.screen_stack[-1], ContextMenu)
             assert app.show_all == show_all
+
+    asyncio.run(scenario())
+
+
+def test_busy_modal_blocks_keys_while_sync_runs(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        release = asyncio.Event()
+
+        async def slow_sync(repo_root, paths=None, on_output=None):
+            await on_output("Fetching: 50% (1/2)")
+            await release.wait()
+            return 0
+
+        monkeypatch.setattr(repo_backend, "sync_projects", slow_sync)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+
+            await pilot.press("space", "S")
+            await pilot.pause()
+            busy = app.screen_stack[-1]
+            assert isinstance(busy, BusyModal)
+            bar = busy.query_one("#busy-bar")
+            assert (bar.progress, bar.total) == (1, 2)
+
+            show_all = app.show_all
+            for key in ("space", "escape", "a", "b", "q"):
+                await pilot.press(key)
+            await pilot.pause()
+            assert app.screen_stack[-1] is busy  # nothing got through
+            assert app.show_all == show_all
+
+            release.set()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            result = app.screen_stack[-1]
+            assert isinstance(result, DiffScreen)
+            assert not any(isinstance(s, BusyModal) for s in app.screen_stack)
 
     asyncio.run(scenario())

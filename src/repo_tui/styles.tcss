@@ -144,3 +144,30 @@ ActionPanel {
     background: $warning 40%;
     padding: 0 1;
 }
+
+BusyModal {
+    align: center middle;
+}
+
+#busy-box {
+    width: 80;
+    max-width: 100%;
+    height: auto;
+    background: $panel;
+    border: round $warning;
+    padding: 1 2;
+}
+
+#busy-bar {
+    margin-top: 1;
+}
+
+#busy-status {
+    height: 1;
+}
+
+#busy-log {
+    height: 8;
+    margin: 1 0;
+    background: $surface;
+}
