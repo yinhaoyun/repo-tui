@@ -107,10 +107,10 @@ package elsewhere without its `.git`), it'll tell you to re-clone instead.
   Right-clicking a project row opens the per-project actions as a menu.
 
 A project counts as "changed" if it has any non-ignored file changes, is
-ahead/behind its upstream, or is checked out on a branch other than the one
-the manifest pins it to. A project sitting in detached HEAD at the manifest
-revision — the normal state for an untouched project right after `repo
-sync` — is *not* treated as changed on its own.
+ahead/behind its upstream, or is checked out on any local branch (e.g. one
+made with `repo start`) — even a branch named like the manifest revision. A
+project sitting in detached HEAD — the normal state for an untouched project
+right after `repo sync` — is *not* treated as changed on its own.
 
 ## Keys
 
@@ -142,8 +142,9 @@ available from the `Space` action panel, so a stray keypress can't trigger
 a sync. The per-project actions (`s`, `d`, `b`/`B`, `c`) are also available
 by right-clicking a project row.
 
-While a `repo` command runs, a dialog blocks all other keys and clicks. For
-`repo sync` it shows the command line, repo's live progress (percentage,
+While a `repo` command or a status refresh (at startup, `r`, and after every
+`repo` command) runs, a dialog blocks all other keys and clicks. A refresh
+shows how many projects have been scanned so far. For `repo sync` it shows the command line, repo's live progress (percentage,
 current project, jobs running) and the output tail. Sync runs with
 `-jN` parallel jobs: one per CPU by default, or set it in the config file:
 

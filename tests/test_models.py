@@ -10,9 +10,16 @@ def make_project(**overrides) -> Project:
 
 
 def test_clean_project_is_not_changed():
-    p = make_project(current_branch="main", manifest_revision="main")
+    p = make_project(is_detached=True, manifest_revision="main")
     assert not p.is_changed
     assert p.stat_summary == "clean"
+
+
+def test_clean_project_on_any_local_branch_is_changed():
+    # Even a branch named like the manifest revision, or with no manifest
+    # revision known at all: a checked-out branch means work was started.
+    assert make_project(current_branch="main", manifest_revision="main").is_changed
+    assert make_project(current_branch="topic", manifest_revision="").is_changed
 
 
 def test_modified_file_marks_changed_and_is_filtered_when_ignored():

@@ -1,5 +1,5 @@
-"""A blocking "please wait" dialog shown while a repo command runs (sync,
-detach, branch, forall). It swallows every key and click so nothing else can
+"""A blocking "please wait" dialog shown while a repo command (sync, detach,
+branch, forall) or a status refresh runs. It swallows every key and click so nothing else can
 be triggered mid-operation; the app dismisses it when the command finishes.
 
 Shows the command line, an animated progress bar (switched to a real
@@ -25,8 +25,11 @@ _PROGRESS_RE = re.compile(
 
 
 class BusyModal(ModalScreen[None]):
-    def __init__(self, title: str, command: str = "", jobs: int | None = None) -> None:
+    def __init__(
+        self, title: str, command: str = "", jobs: int | None = None, show_log: bool = True
+    ) -> None:
         self._title = title
+        self._show_log = show_log
         self._command = command
         self._jobs = jobs
         self._running_jobs: int | None = None
@@ -42,7 +45,8 @@ class BusyModal(ModalScreen[None]):
             yield ProgressBar(total=None, show_eta=False, id="busy-bar")
             yield Static(id="busy-status")
             yield Static(id="busy-progress")
-            yield RichLog(id="busy-log", wrap=False, highlight=False, markup=False)
+            if self._show_log:
+                yield RichLog(id="busy-log", wrap=False, highlight=False, markup=False)
             yield Static("[dim]Please wait — keys are disabled until this finishes.[/]")
 
     def on_mount(self) -> None:
@@ -73,6 +77,14 @@ class BusyModal(ModalScreen[None]):
         """repo's live, redrawn-in-place progress line."""
         self.query_one("#busy-progress", Static).update(escape(line))
         self._track_progress(line)
+
+    def set_count(self, done: int, total: int, detail: str = "") -> None:
+        """Progress counted in items (e.g. projects scanned by a refresh)."""
+        if not self.is_mounted:  # a late update after the dialog closed
+            return
+        self.query_one("#busy-bar", ProgressBar).update(total=total, progress=done)
+        text = f"{done}/{total} projects" + (f"  {detail}" if detail else "")
+        self.query_one("#busy-progress", Static).update(escape(text))
 
     def set_phase(self, phase: str) -> None:
         self._phase = phase

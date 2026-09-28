@@ -77,7 +77,10 @@ class Project:
             return True
         if self.ahead or self.behind:
             return True
-        if self.off_manifest_branch:
+        # `repo sync` leaves untouched projects in detached HEAD, so being on
+        # any local branch (even one named like the manifest revision) means
+        # someone started work here with `repo start`/checkout.
+        if self.current_branch and not self.is_detached:
             return True
         return False
 

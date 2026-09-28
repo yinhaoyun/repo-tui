@@ -103,18 +103,34 @@ class RepoTuiApp(App):
     def _selected_project(self) -> Project | None:
         return self.query_one("#project-list", ProjectList).project_at_cursor()
 
-    async def _refresh(self) -> None:
+    async def _refresh(self, busy: BusyModal | None = None) -> None:
+        """Re-scan git status for every project behind a blocking BusyModal
+        with a per-project count. Reuses `busy` when a repo command already
+        has one open; otherwise opens (and closes) its own."""
+        own_dialog = busy is None
+        if busy is None:
+            busy = BusyModal("Refreshing status", show_log=False)
+            await self.push_screen(busy)
+        busy.set_phase("Refreshing status…")
         header = self.query_one("#header", HeaderBar)
         header.set_syncing(True)
+        loop = asyncio.get_running_loop()
+
+        def on_progress(done: int, total: int, project: Project) -> None:
+            loop.call_soon_threadsafe(busy.set_count, done, total, project.path)
+
         try:
             self.projects = await asyncio.to_thread(
                 git_backend.collect_all,
                 self.projects,
                 self.config.ignore,
                 self.config.max_workers,
+                on_progress,
             )
         finally:
             header.set_syncing(False)
+            if own_dialog:
+                await busy.dismiss()
         self._apply_filters()
 
     # -- message handlers ---------------------------------------------------
@@ -202,8 +218,7 @@ class RepoTuiApp(App):
             except OSError as exc:  # e.g. `repo` not on PATH
                 log_lines.append(f"error: {exc}")
                 returncode = None
-            busy.set_phase("Refreshing status…")
-            await self._refresh()
+            await self._refresh(busy)
         finally:
             header.set_syncing(False)
             await busy.dismiss()

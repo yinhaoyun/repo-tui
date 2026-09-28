@@ -10,8 +10,9 @@ ever reaches the UI.
 from __future__ import annotations
 
 import subprocess
+import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Iterable
+from typing import Callable, Iterable, Optional
 
 from .ignore import IgnoreRules
 from .models import FileStatus, Project
@@ -135,14 +136,33 @@ def collect_project_status(project: Project, ignore: IgnoreRules) -> Project:
 
 
 def collect_all(
-    projects: Iterable[Project], ignore: IgnoreRules, max_workers: int = 16
+    projects: Iterable[Project],
+    ignore: IgnoreRules,
+    max_workers: int = 16,
+    on_progress: Optional[Callable[[int, int, Project], None]] = None,
 ) -> list[Project]:
-    """Synchronous, thread-parallel status collection across many projects."""
+    """Synchronous, thread-parallel status collection across many projects.
+
+    `on_progress(done, total, project)` is called from worker threads as each
+    project finishes, so it must be thread-safe."""
     projects = list(projects)
     if not projects:
         return []
+    lock = threading.Lock()
+    done = 0
+
+    def collect(project: Project) -> Project:
+        nonlocal done
+        collect_project_status(project, ignore)
+        if on_progress is not None:
+            with lock:
+                done += 1
+                count = done
+            on_progress(count, len(projects), project)
+        return project
+
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        return list(pool.map(lambda p: collect_project_status(p, ignore), projects))
+        return list(pool.map(collect, projects))
 
 
 def read_file_diff(project: Project, rel_path: str, staged: bool = False) -> str:

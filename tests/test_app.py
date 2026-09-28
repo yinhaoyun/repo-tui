@@ -1,9 +1,10 @@
 import asyncio
 import subprocess
+import threading
 
 import pytest
 
-from repo_tui import repo_backend
+from repo_tui import git_backend, repo_backend
 from repo_tui.app import RepoTuiApp
 from repo_tui.widgets.action_panel import ActionPanel
 from repo_tui.widgets.busy_modal import BusyModal
@@ -56,6 +57,11 @@ def dirty_tree(tmp_path):
         _git(proj_dir, "add", "README.md")
         _git(proj_dir, "commit", "-q", "-m", "init")
         _git(proj_dir, "branch", "-m", "main")  # match manifest revision="main"
+
+    # build/make looks freshly synced: detached HEAD, no local branches.
+    make = root / "build/make"
+    _git(make, "checkout", "-q", "--detach")
+    _git(make, "branch", "-q", "-D", "main")
 
     base = root / "frameworks/base"
     (base / "README.md").write_text("hello\nmore\n")
@@ -247,7 +253,7 @@ def test_switch_branch_falls_back_to_prompt_when_no_other_branches(dirty_tree):
             await pilot.pause()
 
             project_list = app.query_one("#project-list", ProjectList)
-            _select_project(project_list, "build/make")  # only has "main"
+            _select_project(project_list, "build/make")  # detached, no local branches
             await pilot.pause()
 
             await pilot.press("B")
@@ -459,5 +465,44 @@ def test_busy_modal_blocks_keys_while_sync_runs(dirty_tree, monkeypatch):
             result = app.screen_stack[-1]
             assert isinstance(result, DiffScreen)
             assert not any(isinstance(s, BusyModal) for s in app.screen_stack)
+
+    asyncio.run(scenario())
+
+
+def test_refresh_shows_blocking_progress_dialog(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert len(app.screen_stack) == 1  # startup refresh dialog closed
+
+            release = threading.Event()
+            real_collect_all = git_backend.collect_all
+
+            def slow_collect_all(projects, ignore, max_workers=16, on_progress=None):
+                projects = list(projects)
+                on_progress(1, len(projects), projects[0])
+                release.wait(5)
+                return real_collect_all(projects, ignore, max_workers)
+
+            monkeypatch.setattr(git_backend, "collect_all", slow_collect_all)
+
+            await pilot.press("r")
+            await pilot.pause(0.2)
+            busy = app.screen_stack[-1]
+            assert isinstance(busy, BusyModal)
+            bar = busy.query_one("#busy-bar")
+            assert (bar.progress, bar.total) == (1, 2)
+            assert "1/2 projects" in str(busy.query_one("#busy-progress").render())
+
+            await pilot.press("a")  # blocked while refreshing
+            assert app.screen_stack[-1] is busy
+
+            release.set()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert len(app.screen_stack) == 1
 
     asyncio.run(scenario())

@@ -1,4 +1,7 @@
-from repo_tui.git_backend import _parse_numstat, _parse_status_v2
+from repo_tui import git_backend
+from repo_tui.git_backend import _parse_numstat, _parse_status_v2, collect_all
+from repo_tui.ignore import IgnoreRules
+from repo_tui.models import Project
 
 
 def test_parse_numstat_basic():
@@ -62,3 +65,12 @@ def test_parse_status_v2_rename():
     )
     _, _, _, _, files = _parse_status_v2(out)
     assert files[0].path == "new_name.py"
+
+
+def test_collect_all_reports_progress_per_project(tmp_path, monkeypatch):
+    monkeypatch.setattr(git_backend, "collect_project_status", lambda p, ignore: p)
+    projects = [Project(path=f"p{i}", name=f"p{i}", abs_path=tmp_path) for i in range(5)]
+    calls = []
+    collect_all(projects, IgnoreRules(), max_workers=3,
+                on_progress=lambda done, total, p: calls.append((done, total)))
+    assert sorted(calls) == [(n, 5) for n in range(1, 6)]
