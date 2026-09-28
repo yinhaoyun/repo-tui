@@ -120,6 +120,7 @@ right after `repo sync` — is *not* treated as changed on its own.
 | `tab` | switch focus between panes |
 | `enter` / click (on a file row) | open that file's diff |
 | right-click (on a project row) | open the project context menu |
+| drag the `│` divider | resize the project list vs. the detail pane |
 | `?` | help |
 | `/` | filter projects by path/name |
 | `a` | toggle show-all vs. hide-unchanged |

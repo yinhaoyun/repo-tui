@@ -15,7 +15,17 @@ HeaderBar {
 
 ProjectList {
     width: 44%;
-    border-right: solid $primary-background-lighten-2;
+}
+
+Splitter {
+    width: 1;
+    height: 1fr;
+    color: $primary-background-lighten-2;
+}
+
+Splitter:hover, Splitter.-dragging {
+    color: $accent;
+    background: $accent 30%;
 }
 
 DetailPane {

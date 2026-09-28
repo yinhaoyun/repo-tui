@@ -15,6 +15,7 @@ HELP_TEXT = """\
   enter            open diff for the selected file (right pane)
   mouse            left-click a row to select it, scroll wheel to scroll
   right-click      open the project context menu (left pane)
+  drag │           drag the divider between the panes to resize them
 
 [b u]View & app[/]
   ?                toggle this help

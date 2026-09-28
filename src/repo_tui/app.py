@@ -24,6 +24,7 @@ from .widgets.help_modal import HelpModal
 from .widgets.keybar import KeyBar
 from .widgets.project_list import ProjectContextMenuRequested, ProjectHighlighted, ProjectList
 from .widgets.prompt_modal import PromptModal
+from .widgets.splitter import Splitter
 
 
 class FilterInput(Input):
@@ -73,6 +74,7 @@ class RepoTuiApp(App):
         yield HeaderBar(id="header")
         with Horizontal(id="body"):
             yield ProjectList(id="project-list")
+            yield Splitter("project-list", id="pane-splitter")
             yield DetailPane(id="detail-pane")
         yield FilterInput(placeholder="filter by path/name…", id="filter-bar")
         yield KeyBar(id="keybar")

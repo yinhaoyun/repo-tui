@@ -506,3 +506,29 @@ def test_refresh_shows_blocking_progress_dialog(dirty_tree, monkeypatch):
             assert len(app.screen_stack) == 1
 
     asyncio.run(scenario())
+
+
+def test_dragging_splitter_resizes_project_list(dirty_tree):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            project_list = app.query_one("#project-list", ProjectList)
+            before = project_list.size.width
+
+            await pilot.mouse_down("#pane-splitter")
+            await pilot.hover(offset=(80, 10))
+            await pilot.mouse_up(offset=(80, 10))
+            await pilot.pause()
+            assert project_list.size.width == 80 != before
+
+            # clamped so the right pane never collapses
+            await pilot.mouse_down("#pane-splitter")
+            await pilot.hover(offset=(119, 10))
+            await pilot.mouse_up(offset=(119, 10))
+            await pilot.pause()
+            assert project_list.size.width == 120 - 1 - 20
+
+    asyncio.run(scenario())
