@@ -519,18 +519,28 @@ def test_dragging_splitter_resizes_project_list(dirty_tree):
             project_list = app.query_one("#project-list", ProjectList)
             before = project_list.size.width
 
-            await pilot.mouse_down("#pane-splitter")
-            await pilot.hover(offset=(80, 10))
-            await pilot.mouse_up(offset=(80, 10))
-            await pilot.pause()
-            assert project_list.size.width == 80 != before
+            # grabbing any of the splitter's 3 columns works; the line (middle
+            # column) then follows the pointer
+            splitter = app.query_one("#pane-splitter")
+            for grab_x in (0, 2):
+                await pilot.mouse_down("#pane-splitter", offset=(grab_x, 5))
+                await pilot.hover(offset=(80, 10))
+                await pilot.mouse_up(offset=(80, 10))
+                await pilot.pause()
+                assert project_list.size.width == 79 != before
+                assert splitter.region.x + 1 == 80
+                await pilot.mouse_down("#pane-splitter", offset=(1, 5))
+                await pilot.hover(offset=(before + 1, 10))
+                await pilot.mouse_up(offset=(before + 1, 10))
+                await pilot.pause()
+                assert project_list.size.width == before
 
             # clamped so the right pane never collapses
             await pilot.mouse_down("#pane-splitter")
             await pilot.hover(offset=(119, 10))
             await pilot.mouse_up(offset=(119, 10))
             await pilot.pause()
-            assert project_list.size.width == 120 - 1 - 20
+            assert project_list.size.width == 120 - 3 - 20
 
     asyncio.run(scenario())
 

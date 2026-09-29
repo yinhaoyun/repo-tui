@@ -1,5 +1,6 @@
-"""A one-column vertical divider that can be dragged with the mouse to resize
-the pane on its left (the project list) against the pane on its right."""
+"""A vertical divider that can be dragged with the mouse to resize the pane on
+its left (the project list) against the pane on its right. It is three
+columns wide with the line drawn in the middle, so it is easy to grab."""
 
 from __future__ import annotations
 
@@ -17,7 +18,8 @@ class Splitter(Widget):
         self._dragging = False
 
     def render(self) -> str:
-        return "\n".join("│" * self.size.width for _ in range(self.size.height))
+        line = "│".center(self.size.width)
+        return "\n".join(line for _ in range(self.size.height))
 
     def on_mouse_down(self, event: events.MouseDown) -> None:
         if event.button != 1:
@@ -31,7 +33,8 @@ class Splitter(Widget):
         if not self._dragging or self.parent is None:
             return
         container = self.parent.region
-        width = event.screen_x - container.x
+        # keep the drawn line (the middle column) under the pointer
+        width = event.screen_x - container.x - self.size.width // 2
         max_width = container.width - self.size.width - MIN_PANE_WIDTH
         width = max(MIN_PANE_WIDTH, min(width, max_width))
         self.parent.query_one(f"#{self._target_id}").styles.width = width
