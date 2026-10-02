@@ -580,3 +580,48 @@ def test_discard_asks_first_then_cleans_stat_but_keeps_ignored(dirty_tree):
             assert (base / "generated.pyc").exists()  # hidden by ignore rules: kept
 
     asyncio.run(scenario())
+
+
+def test_single_project_action_rescans_only_that_project(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        detach_calls = []
+
+        async def fake_sync_detach(repo_root, paths=None, on_output=None, **kwargs):
+            detach_calls.append(paths)
+            return 0
+
+        monkeypatch.setattr(repo_backend, "sync_detach", fake_sync_detach)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            scanned = []
+            real_collect_all = git_backend.collect_all
+
+            def spy_collect_all(projects, *args, **kwargs):
+                projects = list(projects)
+                scanned.append([p.path for p in projects])
+                return real_collect_all(projects, *args, **kwargs)
+
+            monkeypatch.setattr(git_backend, "collect_all", spy_collect_all)
+
+            _select_project(app.query_one("#project-list", ProjectList), "frameworks/base")
+            await pilot.pause()
+            await pilot.press("space", "d")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert detach_calls == [["frameworks/base"]]
+            assert scanned == [["frameworks/base"]]
+
+            await pilot.press("escape")  # close the result screen
+            await pilot.press("r")  # a manual refresh still scans everything
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert sorted(scanned[-1]) == ["build/make", "frameworks/base"]
+
+    asyncio.run(scenario())

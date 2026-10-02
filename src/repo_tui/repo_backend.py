@@ -221,8 +221,11 @@ async def _stream_subprocess_tty(
 def sync_args(
     paths: Optional[list[str]] = None, jobs: Optional[int] = None, detach: bool = False
 ) -> list[str]:
-    """argv for `repo sync`; shared with the UI so it can show the command."""
-    args = ["repo", "sync", "-d" if detach else "--current-branch"]
+    """argv for `repo sync`; shared with the UI so it can show the command.
+
+    `detach` is local-only (`-d -l`): going back to the manifest revision
+    needs no network fetch, so it doesn't contact the server at all."""
+    args = ["repo", "sync", *(["-d", "-l"] if detach else ["--current-branch"])]
     if jobs:
         args.append(f"-j{jobs}")
     return args + list(paths or [])
@@ -282,9 +285,9 @@ async def sync_detach(
     on_progress: Optional[OutputCallback] = None,
     jobs: Optional[int] = None,
 ) -> int:
-    """Run `repo sync -d [-jN] [paths...]`: detach back to the manifest-pinned
-    revision, leaving whatever local branch was checked out untouched (it
-    is not deleted, just no longer checked out)."""
+    """Run `repo sync -d -l [-jN] [paths...]`: detach back to the manifest-
+    pinned revision without fetching, leaving whatever local branch was
+    checked out untouched (it is not deleted, just no longer checked out)."""
     return await _stream_subprocess_tty(
         repo_root, sync_args(paths, jobs, detach=True), on_output, on_progress
     )

@@ -34,7 +34,7 @@ HELP_TEXT = """\
 [b u]Action panel — press space, then a key (stays open until you choose)[/]
   space s          repo sync — selected project only
   space S          repo sync — entire tree
-  space d          repo sync -d — detach selected project to manifest revision
+  space d          repo sync -d -l — detach to manifest revision (no fetch)
   space x          discard changes — revert to HEAD + delete untracked (asks y/N)
   space b/B/c/f    same as the direct keys above
   esc / space      close the panel without doing anything

@@ -82,7 +82,7 @@ def test_load_projects_uses_manifest_revisions(fake_tree):
 def test_sync_args_adds_jobs_and_paths():
     assert sync_args(["a/b"], 8) == ["repo", "sync", "--current-branch", "-j8", "a/b"]
     assert sync_args(jobs=None) == ["repo", "sync", "--current-branch"]
-    assert sync_args(["a"], 4, detach=True) == ["repo", "sync", "-d", "-j4", "a"]
+    assert sync_args(["a"], detach=True) == ["repo", "sync", "-d", "-l", "a"]
 
 
 # Mimics repo's progress.py: a \r-redrawn progress line (only when stderr is

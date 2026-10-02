@@ -107,10 +107,13 @@ class RepoTuiApp(App):
     def _selected_project(self) -> Project | None:
         return self.query_one("#project-list", ProjectList).project_at_cursor()
 
-    async def _refresh(self, busy: BusyModal | None = None) -> None:
-        """Re-scan git status for every project behind a blocking BusyModal
-        with a per-project count. Reuses `busy` when a repo command already
-        has one open; otherwise opens (and closes) its own."""
+    async def _refresh(
+        self, busy: BusyModal | None = None, only: list[Project] | None = None
+    ) -> None:
+        """Re-scan git status behind a blocking BusyModal with a per-project
+        count: every project, or just `only` (after an action on one project
+        the rest of the tree can't have changed). Reuses `busy` when a repo
+        command already has one open; otherwise opens (and closes) its own."""
         own_dialog = busy is None
         if busy is None:
             busy = BusyModal("Refreshing status", show_log=False)
@@ -124,9 +127,10 @@ class RepoTuiApp(App):
             loop.call_soon_threadsafe(busy.set_count, done, total, project.path)
 
         try:
-            self.projects = await asyncio.to_thread(
+            # collect_all updates the Project objects in place
+            await asyncio.to_thread(
                 git_backend.collect_all,
-                self.projects,
+                self.projects if only is None else only,
                 self.config.ignore,
                 self.config.max_workers,
                 on_progress,
@@ -198,11 +202,17 @@ class RepoTuiApp(App):
     #    right-click context menu ----------------------------------------
 
     async def _run_and_refresh(
-        self, title: str, coro_factory, command: str = "", jobs: int | None = None
+        self,
+        title: str,
+        coro_factory,
+        command: str = "",
+        jobs: int | None = None,
+        project: Project | None = None,
     ) -> None:
         """Run a repo command behind a blocking BusyModal, refresh status,
         then show the command's output. `coro_factory(on_output, on_progress)`
-        starts the command; `command`/`jobs` are only shown in the dialog."""
+        starts the command; `command`/`jobs` are only shown in the dialog.
+        With `project`, only that project is re-scanned afterwards."""
         header = self.query_one("#header", HeaderBar)
         header.set_syncing(True)
         busy = BusyModal(title, command=command, jobs=jobs)
@@ -222,7 +232,7 @@ class RepoTuiApp(App):
             except OSError as exc:  # e.g. `repo` not on PATH
                 log_lines.append(f"error: {exc}")
                 returncode = None
-            await self._refresh(busy)
+            await self._refresh(busy, only=[project] if project else None)
         finally:
             header.set_syncing(False)
             await busy.dismiss()
@@ -242,6 +252,7 @@ class RepoTuiApp(App):
                 ),
                 command=" ".join(repo_backend.sync_args([project.path], self.config.sync_jobs)),
                 jobs=self.config.sync_jobs,
+                project=project,
             ),
             exclusive=True,
             group="sync",
@@ -269,16 +280,10 @@ class RepoTuiApp(App):
             self._run_and_refresh(
                 f"repo sync -d: {project.path}",
                 lambda on_output, on_progress: repo_backend.sync_detach(
-                    self.repo_root,
-                    [project.path],
-                    on_output=on_output,
-                    on_progress=on_progress,
-                    jobs=self.config.sync_jobs,
+                    self.repo_root, [project.path], on_output=on_output, on_progress=on_progress
                 ),
-                command=" ".join(
-                    repo_backend.sync_args([project.path], self.config.sync_jobs, detach=True)
-                ),
-                jobs=self.config.sync_jobs,
+                command=" ".join(repo_backend.sync_args([project.path], detach=True)),
+                project=project,
             ),
             exclusive=True,
             group="sync",
@@ -291,6 +296,7 @@ class RepoTuiApp(App):
                 lambda on_output, _progress: repo_backend.checkout_branch(
                     self.repo_root, branch, [project.path], on_output=on_output
                 ),
+                project=project,
             ),
             exclusive=True,
             group="branch",
@@ -337,6 +343,7 @@ class RepoTuiApp(App):
                     lambda on_output, _progress: repo_backend.start_branch(
                         self.repo_root, branch, [project.path], on_output=on_output
                     ),
+                    project=project,
                 ),
                 exclusive=True,
                 group="branch",
@@ -377,6 +384,7 @@ class RepoTuiApp(App):
                     f"discard changes: {project.path}",
                     discard,
                     command="git restore --source=HEAD --staged --worktree … && git clean -f …",
+                    project=project,
                 ),
                 exclusive=True,
                 group="discard",

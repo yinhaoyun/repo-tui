@@ -13,7 +13,7 @@ from textual.widgets import Static
 # (key, action id, label) — split by what the action touches.
 PROJECT_ACTIONS = [
     ("s", "sync_selected", "sync"),
-    ("d", "detach", "detach (sync -d)"),
+    ("d", "detach", "detach (sync -d -l)"),
     ("b", "start_branch", "start new branch"),
     ("B", "switch_branch", "switch branch"),
     ("x", "discard", "discard changes…"),

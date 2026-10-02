@@ -133,7 +133,7 @@ right after `repo sync` — is *not* treated as changed on its own.
 | `f` | `repo forall -c <command>` across the tree (prompts for the command) |
 | `Space` then `s` | `repo sync` the selected project |
 | `Space` then `S` | `repo sync` the whole tree |
-| `Space` then `d` | `repo sync -d` — detach the selected project to its manifest revision |
+| `Space` then `d` | `repo sync -d -l` — detach the selected project to its manifest revision (local only, no fetch) |
 | `Space` then `x` | discard the selected project's changes so its Stat is clean: tracked changes revert to HEAD, untracked files are deleted; files hidden by your ignore rules, commits and the branch are kept (asks y/N first) |
 | `Space` then `b`/`B`/`c`/`f` | same as the direct keys |
 | `Esc` / `Space` (in the panel) | close the action panel without doing anything |
