@@ -1,7 +1,7 @@
 """`repo-tui update`: pull the latest source and reinstall in place.
 
-This only works for an editable (`pip install -e .`) install from a git
-clone, which is the install method the README documents -- there is no
+This only works for an editable install (`uv tool install --editable .` or
+`pip install -e .`) from a git clone, which is the install method the README documents -- there is no
 published PyPI package to fall back to. It deliberately never force-pushes
 over local changes: if the checkout is dirty or has diverged, it stops and
 tells the user what to do instead of guessing.
@@ -9,6 +9,7 @@ tells the user what to do instead of guessing.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -34,7 +35,7 @@ def _find_git_checkout_root() -> Path:
         "(no pyproject.toml for repo-tui found above "
         f"{here}). Re-clone from GitHub and reinstall instead:\n"
         "  git clone https://github.com/yinhaoyun/repo-tui.git\n"
-        "  cd repo-tui && python3 -m pip install --user -e ."
+        "  cd repo-tui && uv tool install --editable ."
     )
 
 
@@ -42,7 +43,19 @@ def _run(cwd: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=False)
 
 
+def _is_uv_tool_env() -> bool:
+    """`uv tool install` envs carry a uv-receipt.toml and have no pip."""
+    return (Path(sys.prefix) / "uv-receipt.toml").is_file()
+
+
 def _pip_install_editable(root: Path) -> subprocess.CompletedProcess:
+    if _is_uv_tool_env():
+        uv = shutil.which("uv") or "uv"
+        return subprocess.run(
+            [uv, "tool", "install", "--quiet", "--editable", "--reinstall", str(root)],
+            capture_output=True,
+            text=True,
+        )
     install = subprocess.run(
         [sys.executable, "-m", "pip", "install", "--quiet", "-e", str(root)],
         capture_output=True,
@@ -115,7 +128,7 @@ def run_update() -> int:
     print("repo-tui update: reinstalling to pick up any dependency changes...")
     install = _pip_install_editable(root)
     if install.returncode != 0:
-        print(f"repo-tui update: pip install failed:\n{install.stderr}", file=sys.stderr)
+        print(f"repo-tui update: reinstall failed:\n{install.stderr}", file=sys.stderr)
         return 1
 
     print(f"repo-tui update: done ({before[:8]} -> {after[:8]}).")

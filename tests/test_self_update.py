@@ -97,7 +97,7 @@ def test_reports_pip_failure(clone_pair, monkeypatch, capsys):
 
     result = self_update.run_update()
     assert result == 1
-    assert "pip install failed" in capsys.readouterr().err
+    assert "reinstall failed" in capsys.readouterr().err
 
 
 def test_no_git_checkout_found(tmp_path, monkeypatch):
@@ -105,3 +105,16 @@ def test_no_git_checkout_found(tmp_path, monkeypatch):
     monkeypatch.setattr(self_update.repo_tui, "__file__", str(lonely))
     result = self_update.run_update()
     assert result == 1
+
+
+def test_reinstall_uses_uv_in_a_uv_tool_env(tmp_path, monkeypatch):
+    (tmp_path / "uv-receipt.toml").write_text("")
+    monkeypatch.setattr(self_update.sys, "prefix", str(tmp_path))
+    calls = []
+    monkeypatch.setattr(
+        self_update.subprocess,
+        "run",
+        lambda args, **kw: calls.append(args) or subprocess.CompletedProcess(args, 0, "", ""),
+    )
+    self_update._pip_install_editable(tmp_path)
+    assert calls[0][1:] == ["tool", "install", "--quiet", "--editable", "--reinstall", str(tmp_path)]

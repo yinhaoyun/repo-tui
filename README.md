@@ -24,39 +24,70 @@ whichever project you've selected, on the right.
 
 ## Install
 
-```sh
-git clone https://github.com/yinhaoyun/repo-tui.git
-cd repo-tui
-python3 -m pip install --user -e .
-```
+The recommended way is [uv](https://docs.astral.sh/uv/)'s `uv tool install`.
+It gives repo-tui its own private environment and puts a `repo-tui` command
+in `~/.local/bin`, so it runs like a native app: no venv to activate, and
+nothing touches the system Python. The same steps work on Ubuntu 20.04,
+22.04 and 24.04.
+
+1. Install uv (once per machine). Use Astral's installer rather than
+   `sudo snap install astral-uv`: it needs no sudo and installs to
+   `~/.local/bin`:
+
+   ```sh
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+   Then open a new terminal (or `source ~/.bashrc`) so `~/.local/bin` is on
+   your `PATH`.
+
+2. Clone and install:
+
+   ```sh
+   git clone https://github.com/yinhaoyun/repo-tui.git
+   cd repo-tui
+   uv tool install --editable .
+   ```
+
+   If `repo-tui` isn't found afterwards, run `uv tool update-shell` and open
+   a new terminal.
+
+`--editable` makes the installed command run straight from your clone, which
+is what lets `repo-tui update` (below) upgrade it in place. To remove it:
+`uv tool uninstall repo-tui`.
 
 The repo is private, so `git clone` will prompt for GitHub credentials; the
 simplest fix is `gh auth login` once (via GitHub CLI) or an SSH clone URL
 (`git@github.com:yinhaoyun/repo-tui.git`) with your key already added to
 GitHub.
 
-If pip refuses with `error: externally-managed-environment` (Debian/Ubuntu
-23.04+, including 24.04), either use a venv:
+### Without uv
+
+pipx does the same job (from apt on Ubuntu 22.04 and 24.04; 20.04's apt pipx is
+too old, so use uv or pip there):
 
 ```sh
-sudo apt install -y python3-venv   # if not already present
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -e .
+sudo apt install -y pipx
+pipx ensurepath                    # then open a new terminal
+pipx install -e .                  # from inside the clone
 ```
 
-or install straight to your user site-packages, bypassing the guard (safe
-here — it only touches your own `~/.local`, not system files):
+Or use plain pip. On Ubuntu 20.04 and 22.04:
+
+```sh
+python3 -m pip install --user -e .
+```
+
+On Ubuntu 24.04 (and other Debian/Ubuntu 23.04+), pip refuses with
+`error: externally-managed-environment`; add `--break-system-packages`
+(safe here — it only touches your own `~/.local`, not system files):
 
 ```sh
 python3 -m pip install --user --break-system-packages -e .
 ```
 
-Either way, this installs a `repo-tui` command. With the venv approach it
-only exists while the venv is active (`. .venv/bin/activate` each session,
-or symlink `.venv/bin/repo-tui` somewhere on your `PATH`); with `--user` it
-lands in `~/.local/bin`, so make sure that's on your `PATH`
-(`export PATH="$HOME/.local/bin:$PATH"` in `~/.bashrc` if not).
+With `--user`, the command lands in `~/.local/bin`, so make sure that's on
+your `PATH` (`export PATH="$HOME/.local/bin:$PATH"` in `~/.bashrc` if not).
 
 ## Use
 
@@ -71,21 +102,22 @@ repo-tui /path/to/tree
 repo-tui update
 ```
 
-This only works because the install is editable (`pip install -e .` from a
+This only works because the install is editable (`--editable` / `-e` from a
 git clone): `repo-tui update` finds that clone (by walking up from the
 installed package's own location, the same trick `find_repo_root` uses for
 `.repo`), refuses to touch it if it has uncommitted local changes, runs
-`git pull --ff-only`, and reinstalls to pick up any new dependencies. It's
+`git pull --ff-only`, and reinstalls to pick up any new dependencies (with
+uv when it was installed via `uv tool install`, pip otherwise). It's
 equivalent to, and no more magic than, doing this by hand:
 
 ```sh
 cd path/to/your/repo-tui/clone
 git pull --ff-only
-python3 -m pip install --user -e .   # only strictly needed if deps changed
+uv tool install --editable --reinstall .   # only strictly needed if deps changed
 ```
 
-There's no published PyPI package, so there's nothing to `pip install
---upgrade` from — the git checkout is the only source of truth. If
+There's no published PyPI package, so there's nothing to `uv tool upgrade`
+or `pip install --upgrade` from — the git checkout is the only source of truth. If
 `repo-tui update` can't find a git checkout (e.g. you copied the installed
 package elsewhere without its `.git`), it'll tell you to re-clone instead.
 
