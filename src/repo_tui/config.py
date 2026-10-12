@@ -9,14 +9,16 @@ Later files do not merge with earlier ones; the first one found wins, so a
 project-local file fully overrides the user's global defaults. This keeps
 behavior predictable for a tool whose whole point is "what counts as noise".
 
-Choices made in the in-app settings menu (`o`) are saved separately, to
+The settings listed in SETTINGS can also be changed in the in-app settings
+screen (`o`). Those choices are saved separately, to
 ~/.config/repo-tui/settings.toml ($REPO_TUI_SETTINGS overrides the path),
-and take precedence over the config file, so toggling one in the UI never
+and take precedence over the config file, so changing one in the UI never
 rewrites a hand-edited (or team-shared) config.
 """
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -35,14 +37,116 @@ def default_sync_jobs() -> int:
     return os.cpu_count() or 4
 
 
+SORT_CHOICES = (
+    ("changed", "changed first"),
+    ("changes", "most changes first"),
+    ("branch", "by branch"),
+    ("path", "by path"),
+)
+RESULT_SCREEN_CHOICES = (
+    ("always", "always"),
+    ("problems", "only on errors/warnings"),
+)
+AUTO_REFRESH_CHOICES = tuple(
+    (minutes, f"every {minutes} min" if minutes else "off")
+    for minutes in (0, 1, 2, 5, 10, 15, 30, 60)
+)
+
+
 @dataclass
 class Config:
     show_all_default: bool = False
     highlight_hints: bool = True
+    theme: str = "textual-dark"
     max_workers: int = 16
     sync_jobs: int = field(default_factory=default_sync_jobs)
+    confirm_sync_all: bool = False
+    sort: str = "changed"
+    result_screen: str = "always"
+    auto_refresh_minutes: int = 0
     ignore: IgnoreRules = field(default_factory=IgnoreRules)
     source: Path | None = None
+
+
+@dataclass(frozen=True)
+class Setting:
+    """One user-changeable setting: a Config attribute (also its key in
+    settings.toml), where it lives in the config file, and how the settings
+    screen shows it."""
+
+    name: str
+    tab: str
+    label: str
+    help: str
+    kind: str  # "bool", "int", "choice" (one of `choices`) or "theme"
+    section: str  # config file [section] it can also be set in
+    file_key: str
+    choices: tuple = ()  # ((value, label), ...) for kind "choice"
+    minimum: int = 1
+    maximum: int = 64
+
+    def coerce(self, value: Any) -> Any:
+        """`value` as this setting's type, or None if it isn't valid."""
+        if self.kind == "bool":
+            return value if isinstance(value, bool) else None
+        if self.kind == "int":
+            if isinstance(value, bool) or not isinstance(value, int):
+                return None
+            return min(max(value, self.minimum), self.maximum)
+        if self.kind == "choice":
+            return value if value in [v for v, _ in self.choices] else None
+        return value if isinstance(value, str) and value else None  # theme
+
+
+SETTINGS = (
+    Setting(
+        "highlight_hints", "Display", "Highlight key hints & tips",
+        "Show keys as high-contrast keycaps and usage tips in bold colour, "
+        "everywhere: the bottom bar, help, action panel and dialogs.",
+        "bool", "display", "highlight_hints",
+    ),
+    Setting(
+        "theme", "Display", "Theme",
+        "Colour theme for the whole app. Applied as soon as you change it.",
+        "theme", "display", "theme",
+    ),
+    Setting(
+        "sync_jobs", "Sync", "Sync jobs (-jN)",
+        "Parallel jobs for repo sync, sync all and detach. Lower it if your "
+        "git server throttles you. Default: one per CPU.",
+        "int", "sync", "jobs", maximum=128,
+    ),
+    Setting(
+        "confirm_sync_all", "Sync", "Confirm before sync all",
+        "Ask y/N before space S syncs the whole tree.",
+        "bool", "sync", "confirm_all",
+    ),
+    Setting(
+        "max_workers", "Behaviour", "Status scan workers",
+        "How many projects get git status in parallel during a refresh. "
+        "Raise on fast SSDs with many cores; lower on network storage.",
+        "int", "performance", "max_workers", maximum=128,
+    ),
+    Setting(
+        "sort", "Behaviour", "Sort project list",
+        "Order of the project list. Changed first keeps changed projects at "
+        "the top, then sorts by path.",
+        "choice", "display", "sort", choices=SORT_CHOICES,
+    ),
+    Setting(
+        "result_screen", "Behaviour", "Show command output",
+        "After a repo command: always open its output screen, or only when "
+        "it failed or printed errors/warnings (a short toast otherwise).",
+        "choice", "behaviour", "result_screen", choices=RESULT_SCREEN_CHOICES,
+    ),
+    Setting(
+        "auto_refresh_minutes", "Behaviour", "Auto-refresh status",
+        "Rescan git status in the background every N minutes, without the "
+        "blocking dialog. Skipped while a dialog or command is open.",
+        "choice", "behaviour", "auto_refresh_minutes", choices=AUTO_REFRESH_CHOICES,
+    ),
+)
+SETTINGS_BY_NAME = {setting.name: setting for setting in SETTINGS}
 
 
 def _candidate_paths(repo_root: Path) -> list[Path]:
@@ -61,9 +165,11 @@ def load_config(repo_root: Path) -> Config:
         if path.is_file():
             config = _parse(path)
             break
-    settings = load_settings()
-    if isinstance(settings.get("highlight_hints"), bool):
-        config.highlight_hints = settings["highlight_hints"]
+    saved = load_settings()
+    for setting in SETTINGS:
+        value = setting.coerce(saved.get(setting.name))
+        if value is not None:
+            setattr(config, setting.name, value)
     return config
 
 
@@ -83,14 +189,24 @@ def load_settings() -> dict[str, Any]:
         return {}
 
 
-def save_setting(name: str, value: bool) -> Path:
-    """Persist one boolean menu setting, keeping any others in the file."""
-    settings = {k: v for k, v in load_settings().items() if isinstance(v, bool)}
+def _toml_value(value: bool | int | str) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    return json.dumps(value)  # a JSON string is a valid TOML basic string
+
+
+def save_setting(name: str, value: bool | int | str) -> Path:
+    """Persist one menu setting, keeping the others already in the file."""
+    settings = {
+        k: v for k, v in load_settings().items() if isinstance(v, (bool, int, str))
+    }
     settings[name] = value
     path = settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    body = "".join(f"{k} = {'true' if v else 'false'}\n" for k, v in sorted(settings.items()))
-    path.write_text("# Written by repo-tui's settings menu (o).\n" + body)
+    body = "".join(f"{k} = {_toml_value(v)}\n" for k, v in sorted(settings.items()))
+    path.write_text("# Written by repo-tui's settings screen (o).\n" + body)
     return path
 
 
@@ -106,11 +222,13 @@ def _parse(path: Path) -> Config:
         patterns = list(DEFAULT_IGNORE_PATTERNS)
     per_project = ignore_section.get("per_project", {})
 
-    return Config(
+    config = Config(
         show_all_default=bool(display.get("show_all_default", False)),
-        highlight_hints=bool(display.get("highlight_hints", True)),
-        max_workers=int(data.get("performance", {}).get("max_workers", 16)),
-        sync_jobs=int(data.get("sync", {}).get("jobs", default_sync_jobs())),
         ignore=IgnoreRules(patterns=list(patterns), per_project=dict(per_project)),
         source=path,
     )
+    for setting in SETTINGS:
+        value = setting.coerce(data.get(setting.section, {}).get(setting.file_key))
+        if value is not None:
+            setattr(config, setting.name, value)
+    return config

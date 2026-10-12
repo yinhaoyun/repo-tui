@@ -51,3 +51,36 @@ def test_menu_setting_is_saved_and_overrides_config_file(tmp_path):
     save_setting("highlight_hints", True)
     assert load_config(tmp_path).highlight_hints is True
     assert (tmp_path / ".repo-tui.toml").read_text() == "[display]\nhighlight_hints = true\n"
+
+
+def test_new_settings_read_from_config_file_and_bad_values_are_ignored(tmp_path):
+    (tmp_path / ".repo-tui.toml").write_text(
+        """
+[display]
+theme = "nord"
+sort = "branch"
+
+[sync]
+confirm_all = true
+jobs = 0
+
+[behaviour]
+result_screen = "sometimes"
+auto_refresh_minutes = 5
+"""
+    )
+    cfg = load_config(tmp_path)
+    assert cfg.theme == "nord"
+    assert cfg.sort == "branch"
+    assert cfg.confirm_sync_all is True
+    assert cfg.sync_jobs == 1  # clamped to the minimum
+    assert cfg.result_screen == "always"  # invalid choice -> default
+    assert cfg.auto_refresh_minutes == 5
+
+
+def test_saved_settings_of_every_type_round_trip(tmp_path):
+    save_setting("theme", "gruvbox")
+    save_setting("sync_jobs", 6)
+    save_setting("confirm_sync_all", True)
+    cfg = load_config(tmp_path)
+    assert (cfg.theme, cfg.sync_jobs, cfg.confirm_sync_all) == ("gruvbox", 6, True)

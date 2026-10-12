@@ -255,3 +255,78 @@ ConfirmModal {
 #confirm-body {
     margin: 1 0;
 }
+
+SettingsScreen {
+    align: center middle;
+}
+
+#settings-box {
+    width: 76;
+    max-width: 100%;
+    height: auto;
+    background: $panel;
+    border: round $accent;
+    border-title-color: $accent;
+    border-title-style: bold;
+    padding: 0 1;
+}
+
+#settings-tabs {
+    height: 1;
+    margin: 1 0;
+}
+
+.settings-tab {
+    width: auto;
+    margin-right: 1;
+    color: $text-muted;
+}
+
+.settings-tab:hover {
+    background: $boost;
+}
+
+.settings-tab.-active {
+    background: $accent;
+    color: $text;
+    text-style: bold;
+}
+
+#settings-rows {
+    height: auto;
+    min-height: 5;
+    border-top: solid $accent 50%;
+    padding-top: 1;
+}
+
+.setting-row {
+    height: 1;
+}
+
+.setting-row:hover {
+    background: $boost;
+}
+
+.setting-row.-selected {
+    background: $accent 20%;
+}
+
+#settings-help {
+    height: auto;
+    min-height: 2;
+    margin-top: 1;
+    padding: 1 1 0 1;
+    border-top: solid $accent 50%;
+    color: $text-muted;
+}
+
+#settings-status {
+    height: auto;
+    padding: 0 1;
+}
+
+#settings-keys {
+    height: 1;
+    margin-top: 1;
+    padding: 0 1;
+}

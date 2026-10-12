@@ -10,6 +10,19 @@ from textual.widgets import DataTable
 from ..models import Project
 
 
+# config.SORT_CHOICES -> sort key for the visible rows.
+_SORT_KEYS = {
+    "changed": lambda p: (not p.is_changed, p.path),
+    "changes": lambda p: (
+        not p.is_changed,
+        -(p.added + p.deleted + p.untracked_count),
+        p.path,
+    ),
+    "branch": lambda p: (p.is_detached or not p.current_branch, p.current_branch, p.path),
+    "path": lambda p: p.path,
+}
+
+
 class ProjectHighlighted(Message):
     """Sent whenever the highlighted row changes (keyboard or mouse)."""
 
@@ -52,7 +65,7 @@ class ProjectList(DataTable):
         self.add_column("Path")
 
     def set_projects(
-        self, projects: list[Project], show_all: bool, search: str = ""
+        self, projects: list[Project], show_all: bool, search: str = "", sort: str = "changed"
     ) -> None:
         self._all_projects = projects
         prior_path = self._row_paths[self.cursor_row] if self._row_paths and self.cursor_row is not None and self.cursor_row < len(self._row_paths) else None
@@ -67,7 +80,7 @@ class ProjectList(DataTable):
             if (show_all or p.is_changed)
             and (not needle or needle in p.path.lower() or needle in p.name.lower())
         ]
-        visible.sort(key=lambda p: (not p.is_changed, p.path))
+        visible.sort(key=_SORT_KEYS.get(sort, _SORT_KEYS["changed"]))
 
         for p in visible:
             marker = "!" if p.error else ("●" if p.is_changed else " ")

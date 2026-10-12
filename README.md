@@ -185,7 +185,7 @@ right after `repo sync` — is *not* treated as changed on its own.
 | `a` | toggle show-all vs. hide-unchanged |
 | `i` | toggle showing ignored files in the file list |
 | `r` | refresh (re-run git status across the tree) |
-| `o` | settings — e.g. turn highlighted key hints on/off |
+| `o` | settings — theme, highlighted hints, sync jobs, sort, auto-refresh, … (see below) |
 | `q` | quit |
 | `b` | `repo start <branch>` — create a new branch on the selected project (prompts for a name) |
 | `B` | `repo checkout <branch>` — switch to an existing local branch (pick from a list, or type one) |
@@ -215,21 +215,28 @@ current project, jobs running) and the output tail. Sync runs with
 jobs = 4
 ```
 
-## Highlighted key hints
+## Settings (`o`)
 
-Every key hint and usage tip — the bottom bar, the `?` help, the action
-panel, and the prompts in dialogs — is highlighted by default: keys are
-high-contrast keycaps and tips are bold in the theme's accent colour. If
-you'd rather have the plain look (bold keys, dim tips), press `o` and
-toggle "Highlight key hints & tips". The choice is saved to
-`~/.config/repo-tui/settings.toml` (`$REPO_TUI_SETTINGS` overrides the
-path) and wins over the config file. To set the default in the config file
-instead:
+Press `o` for the settings screen. Settings are grouped into tabs: switch
+with `tab`/`shift+tab` (or click a tab), pick a row with `↑`/`↓`, change it
+with `←`/`→`, `enter` or a click (`enter` on a number lets you type it), and
+close with `esc`. Changes apply immediately and are saved to
+`~/.config/repo-tui/settings.toml` (`$REPO_TUI_SETTINGS` overrides the path).
 
-```toml
-[display]
-highlight_hints = false
-```
+| Tab | Setting | Values | Config file key |
+|---|---|---|---|
+| Display | Highlight key hints & tips — keys as high-contrast keycaps, tips in bold colour, everywhere | on (default) / off | `[display] highlight_hints` |
+| Display | Theme | any Textual theme (`textual-dark` default, `nord`, `gruvbox`, `dracula`, …) | `[display] theme` |
+| Sync | Sync jobs (`-jN`) for sync, sync all and detach | 1–128 (default: one per CPU) | `[sync] jobs` |
+| Sync | Confirm before sync all — ask y/N before `Space S` | on / off (default) | `[sync] confirm_all` |
+| Behaviour | Status scan workers — parallel `git status` during a refresh | 1–128 (default 16) | `[performance] max_workers` |
+| Behaviour | Sort project list | changed first (default), most changes first, by branch, by path | `[display] sort` (`changed`/`changes`/`branch`/`path`) |
+| Behaviour | Show command output — after a repo command, always open its output, or only when it failed or printed errors/warnings (a toast otherwise) | always (default) / only on errors/warnings | `[behaviour] result_screen` (`always`/`problems`) |
+| Behaviour | Auto-refresh status — rescan in the background, no blocking dialog; skipped while a dialog or command is open | off (default), every 1/2/5/10/15/30/60 min | `[behaviour] auto_refresh_minutes` |
+
+A value saved from the settings screen wins over the config file, so the
+config file (below) sets your defaults and the screen overrides them per
+user without rewriting it. Invalid values in either file are ignored.
 
 ## Configuring what counts as noise
 

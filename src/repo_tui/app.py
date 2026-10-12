@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 from pathlib import Path
 
 from rich.markup import escape
@@ -28,6 +29,7 @@ from .widgets.keybar import KeyBar
 from .widgets.project_list import ProjectContextMenuRequested, ProjectHighlighted, ProjectList
 from .widgets.prompt_modal import PromptModal
 from .widgets.result_screen import ResultScreen
+from .widgets.settings_screen import SettingsScreen
 from .widgets.splitter import Splitter
 
 
@@ -75,6 +77,10 @@ class RepoTuiApp(App):
         self.show_all = self.config.show_all_default
         self.show_ignored = False
         self.search = ""
+        self._auto_timer = None
+        # Bumped by every foreground status scan, so a background scan that
+        # was overtaken by one throws its (now older) results away.
+        self._scan_generation = 0
 
     def compose(self) -> ComposeResult:
         yield HeaderBar(id="header")
@@ -93,13 +99,15 @@ class RepoTuiApp(App):
         self.tree_info.total_projects = len(self.projects)
         self._apply_filters()
         self.query_one("#project-list", ProjectList).focus()
+        self._apply_theme(self.config.theme)
+        self._restart_auto_refresh()
         self.run_worker(self._refresh(), exclusive=True, group="refresh")
 
     # -- data plumbing ----------------------------------------------------
 
     def _apply_filters(self) -> None:
         self.query_one("#project-list", ProjectList).set_projects(
-            self.projects, self.show_all, self.search
+            self.projects, self.show_all, self.search, self.config.sort
         )
         self._sync_detail_pane()
         self.query_one("#header", HeaderBar).set_counts(self.projects)
@@ -118,6 +126,7 @@ class RepoTuiApp(App):
         count: every project, or just `only` (after an action on one project
         the rest of the tree can't have changed). Reuses `busy` when a repo
         command already has one open; otherwise opens (and closes) its own."""
+        self._scan_generation += 1
         own_dialog = busy is None
         if busy is None:
             busy = BusyModal("Refreshing status", show_log=False)
@@ -144,6 +153,38 @@ class RepoTuiApp(App):
             if own_dialog:
                 await busy.dismiss()
         self._apply_filters()
+
+    async def _background_refresh(self) -> None:
+        """Auto-refresh: rescan a copy of the projects with no dialog, then
+        swap it in -- unless a foreground scan started meanwhile."""
+        generation = self._scan_generation
+        snapshot = copy.deepcopy(self.projects)
+        header = self.query_one("#header", HeaderBar)
+        header.set_syncing(True)
+        try:
+            await asyncio.to_thread(
+                git_backend.collect_all, snapshot, self.config.ignore, self.config.max_workers
+            )
+        finally:
+            header.set_syncing(False)
+        if generation == self._scan_generation:
+            self.projects = snapshot
+            self._apply_filters()
+
+    def _auto_refresh_tick(self) -> None:
+        # Never under a dialog or while a command/scan is running.
+        if len(self.screen_stack) > 1 or any(w.is_running for w in self.workers):
+            return
+        self.run_worker(self._background_refresh(), exclusive=True, group="auto-refresh")
+
+    def _restart_auto_refresh(self) -> None:
+        if self._auto_timer is not None:
+            self._auto_timer.stop()
+            self._auto_timer = None
+        if self.config.auto_refresh_minutes:
+            self._auto_timer = self.set_interval(
+                self.config.auto_refresh_minutes * 60, self._auto_refresh_tick
+            )
 
     # -- message handlers ---------------------------------------------------
 
@@ -199,28 +240,36 @@ class RepoTuiApp(App):
         self.run_worker(self._refresh(), exclusive=True, group="refresh")
 
     def action_settings(self) -> None:
-        state = "on" if hints.highlight_enabled() else "off"
-        options = [("highlight_hints", f"Highlight key hints & tips: {state}  (toggle)")]
-
-        def handle(choice: str | None) -> None:
-            if choice == "highlight_hints":
-                self._set_highlight_hints(not hints.highlight_enabled())
-
-        self.push_screen(ContextMenu("Settings", options), handle)
-
-    def _set_highlight_hints(self, on: bool) -> None:
-        hints.set_highlight(on)
-        self.config.highlight_hints = on
-        self.query_one("#keybar", KeyBar).show_top_level()
-        self._sync_detail_pane()
-        try:
-            path = config_mod.save_setting("highlight_hints", on)
-            saved = f"saved to {path}"
-        except OSError as exc:
-            saved = f"not saved: {exc}"
-        self.notify(
-            f"Highlighted key hints {'on' if on else 'off'} ({escape(saved)})", timeout=4
+        self.push_screen(
+            SettingsScreen(self.config, list(self.available_themes), self._apply_setting)
         )
+
+    def _apply_theme(self, theme: str) -> bool:
+        try:
+            self.theme = theme
+        except Exception:  # noqa: BLE001 - unknown theme name from a config file
+            return False
+        return True
+
+    def _apply_setting(self, name: str, value) -> str:
+        """Apply one change from the settings screen right away, and save
+        it. Returns the status line the settings screen shows."""
+        if name == "theme" and not self._apply_theme(value):
+            return f"[b $text-error]Unknown theme: {escape(str(value))}[/]"
+        setattr(self.config, name, value)
+        if name == "highlight_hints":
+            hints.set_highlight(value)
+            self.query_one("#keybar", KeyBar).show_top_level()
+            self._sync_detail_pane()
+        elif name == "sort":
+            self._apply_filters()
+        elif name == "auto_refresh_minutes":
+            self._restart_auto_refresh()
+        try:
+            path = config_mod.save_setting(name, value)
+        except OSError as exc:
+            return f"[b $text-error]Applied, but not saved: {escape(str(exc))}[/]"
+        return f"[$text-success]✓ Saved[/] [dim]to {escape(str(path))}[/]"
 
     async def _show_diff(self, project: Project, rel_path: str) -> None:
         text = await asyncio.to_thread(git_backend.read_file_diff, project, rel_path)
@@ -266,6 +315,9 @@ class RepoTuiApp(App):
             header.set_syncing(False)
             await busy.dismiss()
         result = ResultScreen(title, log_lines, returncode)
+        if result.severity == "information" and self.config.result_screen == "problems":
+            self.notify(f"{escape(title)} — {result.status}", timeout=4)
+            return
         self.push_screen(result)
         if result.severity != "information":
             first = next((line for _, line in result.problem_lines), "")
@@ -296,6 +348,24 @@ class RepoTuiApp(App):
         )
 
     def _sync_all(self) -> None:
+        if self.config.confirm_sync_all:
+            command = " ".join(repo_backend.sync_args(jobs=self.config.sync_jobs))
+
+            def handle(confirmed: bool | None) -> None:
+                if confirmed:
+                    self._start_sync_all()
+
+            self.push_screen(
+                ConfirmModal(
+                    f"Sync all {len(self.projects)} projects?",
+                    f"[dim]$ {escape(command)}[/]",
+                ),
+                handle,
+            )
+        else:
+            self._start_sync_all()
+
+    def _start_sync_all(self) -> None:
         self.run_worker(
             self._run_and_refresh(
                 "repo sync (all)",

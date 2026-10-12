@@ -32,9 +32,15 @@ patterns = [
 # Show every project by default instead of hiding unchanged ones (press `a`
 # to toggle at runtime either way).
 show_all_default = false
-# High-contrast keycaps for key hints and bold tips (default: true). The
-# settings menu (`o`) toggles this at runtime and its choice wins over this.
+# Everything below can also be changed in the settings screen (`o`); a value
+# saved there wins over this file.
+#
+# High-contrast keycaps for key hints and bold tips (default: true).
 # highlight_hints = true
+# Any Textual theme: textual-dark (default), textual-light, nord, gruvbox, ...
+# theme = "nord"
+# Project list order: "changed" (default), "changes", "branch" or "path".
+# sort = "changed"
 
 [performance]
 # How many projects to run `git status` on in parallel. Raise this on a
@@ -46,3 +52,12 @@ max_workers = 16
 # Parallel jobs for `repo sync -jN` (sync, sync all, detach). Default: the
 # number of CPUs. Lower it if your git server throttles you.
 # jobs = 8
+# Ask y/N before `Space S` syncs the whole tree (default: false).
+# confirm_all = true
+
+[behaviour]
+# After a repo command, open its output screen "always" (default), or only on
+# "problems" (failed, or printed errors/warnings); a toast otherwise.
+# result_screen = "problems"
+# Rescan git status in the background every N minutes (0 = off, default).
+# auto_refresh_minutes = 5

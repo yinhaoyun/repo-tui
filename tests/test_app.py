@@ -13,6 +13,7 @@ from repo_tui.widgets.context_menu import ContextMenu
 from repo_tui.widgets.detail_pane import FileTable
 from repo_tui.widgets.diff_screen import DiffScreen
 from repo_tui.widgets.result_screen import ResultScreen
+from repo_tui.widgets.settings_screen import SettingsScreen
 from repo_tui.widgets.help_modal import HelpModal
 from repo_tui.widgets.project_list import ProjectList
 from repo_tui.widgets.prompt_modal import PromptModal
@@ -697,7 +698,7 @@ def test_clean_sync_shows_no_problems_box_or_toast(dirty_tree, monkeypatch):
     asyncio.run(scenario())
 
 
-def test_settings_menu_toggles_highlighted_hints_and_saves_it(dirty_tree, tmp_path):
+def test_settings_screen_toggles_highlighted_hints_and_saves_it(dirty_tree):
     from repo_tui import config as config_mod
     from repo_tui import hints
 
@@ -712,18 +713,153 @@ def test_settings_menu_toggles_highlighted_hints_and_saves_it(dirty_tree, tmp_pa
 
             await pilot.press("o")
             await pilot.pause()
-            menu = app.screen_stack[-1]
-            assert isinstance(menu, ContextMenu)
-            await pilot.press("enter")
+            screen = app.screen_stack[-1]
+            assert isinstance(screen, SettingsScreen)
+            await pilot.press("enter")  # first row of Display: highlight hints
             await pilot.pause()
 
             assert not hints.highlight_enabled()
             assert "on $warning" not in str(keybar.content)
             assert config_mod.load_settings() == {"highlight_hints": False}
+            assert "Saved" in str(screen.query_one("#settings-status").content)
+
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not isinstance(app.screen_stack[-1], SettingsScreen)
 
     asyncio.run(scenario())
     # a fresh start picks the saved choice up
     assert RepoTuiApp(dirty_tree).config.highlight_hints is False
+
+
+def test_settings_tabs_change_theme_jobs_and_sort(dirty_tree):
+    from repo_tui import config as config_mod
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("o")
+            await pilot.pause()
+            screen = app.screen_stack[-1]
+
+            # Display tab, row 2: theme -> next theme, applied live
+            before = app.theme
+            await pilot.press("down", "right")
+            await pilot.pause()
+            assert app.theme != before
+            assert app.config.theme == app.theme
+
+            # Sync tab: jobs via typed number, clamped to the allowed range
+            await pilot.press("tab", "enter")
+            await pilot.pause()
+            assert isinstance(app.screen_stack[-1], PromptModal)
+            await pilot.press(*"500", "enter")
+            await pilot.pause()
+            assert app.config.sync_jobs == 128
+            await pilot.press("left")
+            await pilot.pause()
+            assert app.config.sync_jobs == 127
+
+            # Behaviour tab, row 2: sort; shown rows are only that tab's
+            await pilot.press("tab")
+            await pilot.pause()
+            shown = [r.setting.name for r in screen.query("SettingRow") if r.display]
+            assert shown == ["max_workers", "sort", "result_screen", "auto_refresh_minutes"]
+            await pilot.press("down", "right")
+            await pilot.pause()
+            assert app.config.sort == "changes"
+
+            saved = config_mod.load_settings()
+            assert saved["sync_jobs"] == 127 and saved["sort"] == "changes"
+            assert saved["theme"] == app.theme
+
+    asyncio.run(scenario())
+
+
+def test_problems_only_result_setting_skips_clean_output_screen(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        app.config.result_screen = "problems"
+        notes = []
+
+        async def ok_sync(repo_root, paths=None, on_output=None, on_progress=None, jobs=None):
+            await on_output("Syncing: 100% (2/2), done")
+            return 0
+
+        monkeypatch.setattr(repo_backend, "sync_projects", ok_sync)
+        monkeypatch.setattr(app, "notify", lambda message, **kw: notes.append(message))
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("space", "S")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert not isinstance(app.screen_stack[-1], ResultScreen)
+            assert notes and "done" in notes[-1]
+
+    asyncio.run(scenario())
+
+
+def test_confirm_sync_all_setting_asks_first(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        app.config.confirm_sync_all = True
+        calls = []
+
+        async def fake_sync(repo_root, paths=None, on_output=None, on_progress=None, jobs=None):
+            calls.append(paths)
+            return 0
+
+        monkeypatch.setattr(repo_backend, "sync_projects", fake_sync)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("space", "S")
+            await pilot.pause()
+            assert isinstance(app.screen_stack[-1], ConfirmModal)
+            await pilot.press("n")
+            await pilot.pause()
+            assert calls == []
+
+            await pilot.press("space", "S")
+            await pilot.pause()
+            await pilot.press("y")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert calls == [None]
+
+    asyncio.run(scenario())
+
+
+def test_auto_refresh_rescans_in_background_without_a_dialog(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert app._auto_timer is None  # off by default
+
+            app._apply_setting("auto_refresh_minutes", 5)
+            assert app._auto_timer is not None
+
+            (dirty_tree / "build/make/new_file.txt").write_text("x\n")
+            app._auto_refresh_tick()
+            await pilot.pause()
+            assert not any(isinstance(s, BusyModal) for s in app.screen_stack)
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            make = next(p for p in app.projects if p.path == "build/make")
+            assert make.untracked_count == 1
+
+            app._apply_setting("auto_refresh_minutes", 0)
+            assert app._auto_timer is None
+
+    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize("on", [True, False])

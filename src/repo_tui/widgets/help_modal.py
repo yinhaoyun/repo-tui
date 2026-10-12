@@ -24,7 +24,7 @@ HELP_SECTIONS = [
         ("a", 'toggle "show all" vs "hide unchanged" (default: hidden)'),
         ("i", "toggle showing ignored files in the file list"),
         ("r", "refresh status (parallel git status across all projects)"),
-        ("o", "settings (e.g. highlighted key hints on/off)"),
+        ("o", "settings: theme, sync jobs, sort, auto-refresh, …"),
         ("q, ctrl+c", "quit"),
     ]),
     ("Actions — direct (each asks before doing anything)", [
