@@ -695,3 +695,44 @@ def test_clean_sync_shows_no_problems_box_or_toast(dirty_tree, monkeypatch):
             assert notes == []
 
     asyncio.run(scenario())
+
+
+def test_settings_menu_toggles_highlighted_hints_and_saves_it(dirty_tree, tmp_path):
+    from repo_tui import config as config_mod
+    from repo_tui import hints
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            keybar = app.query_one("#keybar")
+            assert hints.highlight_enabled()
+            assert "on $warning" in str(keybar.content)
+
+            await pilot.press("o")
+            await pilot.pause()
+            menu = app.screen_stack[-1]
+            assert isinstance(menu, ContextMenu)
+            await pilot.press("enter")
+            await pilot.pause()
+
+            assert not hints.highlight_enabled()
+            assert "on $warning" not in str(keybar.content)
+            assert config_mod.load_settings() == {"highlight_hints": False}
+
+    asyncio.run(scenario())
+    # a fresh start picks the saved choice up
+    assert RepoTuiApp(dirty_tree).config.highlight_hints is False
+
+
+@pytest.mark.parametrize("on", [True, False])
+def test_every_key_hint_follows_the_highlight_setting(on):
+    from repo_tui import hints
+    from repo_tui.widgets.help_modal import help_text
+    from repo_tui.widgets.keybar import top_level_hint
+
+    hints.set_highlight(on)
+    for text in (top_level_hint(), help_text()):
+        assert ("[b #000000 on $warning]" in text) is on
+    assert ("[b $text-warning]Press any key" in help_text()) is on

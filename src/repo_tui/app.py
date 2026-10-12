@@ -13,6 +13,7 @@ from textual.widgets import DataTable, Input
 
 from . import config as config_mod
 from . import git_backend
+from . import hints
 from . import repo_backend
 from .models import Project, TreeInfo
 from .widgets.action_panel import ActionPanel
@@ -52,6 +53,7 @@ class RepoTuiApp(App):
         Binding("a", "toggle_show_all", "Show all"),
         Binding("i", "toggle_show_ignored", "Show ignored"),
         Binding("r", "refresh_status", "Refresh"),
+        Binding("o", "settings", "Settings"),
         Binding("q", "quit", "Quit"),
         # Safe actions (each opens a prompt/picker first, or is harmless) sit on
         # the top layer; ones that run immediately (sync, detach, sync all) are
@@ -67,6 +69,7 @@ class RepoTuiApp(App):
         super().__init__()
         self.repo_root = repo_root
         self.config = config_mod.load_config(repo_root)
+        hints.set_highlight(self.config.highlight_hints)
         self.tree_info: TreeInfo = repo_backend.load_tree_info(repo_root)
         self.projects: list[Project] = []
         self.show_all = self.config.show_all_default
@@ -194,6 +197,30 @@ class RepoTuiApp(App):
 
     def action_refresh_status(self) -> None:
         self.run_worker(self._refresh(), exclusive=True, group="refresh")
+
+    def action_settings(self) -> None:
+        state = "on" if hints.highlight_enabled() else "off"
+        options = [("highlight_hints", f"Highlight key hints & tips: {state}  (toggle)")]
+
+        def handle(choice: str | None) -> None:
+            if choice == "highlight_hints":
+                self._set_highlight_hints(not hints.highlight_enabled())
+
+        self.push_screen(ContextMenu("Settings", options), handle)
+
+    def _set_highlight_hints(self, on: bool) -> None:
+        hints.set_highlight(on)
+        self.config.highlight_hints = on
+        self.query_one("#keybar", KeyBar).show_top_level()
+        self._sync_detail_pane()
+        try:
+            path = config_mod.save_setting("highlight_hints", on)
+            saved = f"saved to {path}"
+        except OSError as exc:
+            saved = f"not saved: {exc}"
+        self.notify(
+            f"Highlighted key hints {'on' if on else 'off'} ({escape(saved)})", timeout=4
+        )
 
     async def _show_diff(self, project: Project, rel_path: str) -> None:
         text = await asyncio.to_thread(git_backend.read_file_diff, project, rel_path)

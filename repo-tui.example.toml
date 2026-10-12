@@ -32,6 +32,9 @@ patterns = [
 # Show every project by default instead of hiding unchanged ones (press `a`
 # to toggle at runtime either way).
 show_all_default = false
+# High-contrast keycaps for key hints and bold tips (default: true). The
+# settings menu (`o`) toggles this at runtime and its choice wins over this.
+# highlight_hints = true
 
 [performance]
 # How many projects to run `git status` on in parallel. Raise this on a

@@ -10,6 +10,8 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
+from ..hints import key, tip
+
 # (key, action id, label) — split by what the action touches.
 PROJECT_ACTIONS = [
     ("s", "sync_selected", "sync"),
@@ -33,8 +35,8 @@ def _keys_text() -> str:
     def cells(title: str, actions: list[tuple[str, str, str]]) -> list[tuple[str, int]]:
         # (markup, visible width) pairs so columns can be padded by hand.
         out = [(f"[b u]{title}[/]", len(title))]
-        out += [(f" [b yellow]{key}[/]  {label}", len(key) + len(label) + 3)
-                for key, _, label in actions]
+        out += [(f" {key(k)}  {label}", len(k) + len(label) + 3)
+                for k, _, label in actions]
         return out
 
     left = cells("This project", PROJECT_ACTIONS)
@@ -56,10 +58,11 @@ class ActionPanel(ModalScreen[str | None]):
     def compose(self):
         box = Vertical(Static(_keys_text(), id="action-keys"), id="action-box")
         box.border_title = f"ACTION ─ target: {self._target or '(no project selected)'}"
-        box.border_subtitle = "Esc / Space  exit"
+        box.border_subtitle = f"{key('Esc')} / {key('Space')} exit"
         yield box
         yield Static(
-            "[b reverse] ACTION MODE [/] press a key above, or [b]Esc[/]/[b]Space[/] to exit",
+            "[b reverse] ACTION MODE [/] "
+            + tip(f"press a key above, or {key('Esc')}/{key('Space')} to exit"),
             id="action-bar",
         )
 

@@ -13,6 +13,7 @@ from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static
 
 from .. import problems
+from ..hints import close_tip
 
 _MAX_PROBLEMS_SHOWN = 10
 
@@ -61,7 +62,7 @@ class ResultScreen(ModalScreen[None]):
         with Vertical(id="result-box", classes=f"-{self.severity}"):
             yield Static(
                 f"[b]{escape(self._title)}[/] — [b {colour}]{escape(self.status)}[/]"
-                "  [dim](esc/q to close)[/]",
+                f"  {close_tip('esc', 'q')}",
                 id="result-title",
             )
             if self.problem_lines:

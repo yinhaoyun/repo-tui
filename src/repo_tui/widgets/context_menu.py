@@ -9,6 +9,8 @@ from textual.screen import ModalScreen
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
+from ..hints import key, tip
+
 
 class ContextMenu(ModalScreen[str | None]):
     """Shows `options` (id, label pairs); dismisses with the chosen id, or
@@ -26,6 +28,10 @@ class ContextMenu(ModalScreen[str | None]):
             yield Static(self._title, id="menu-title")
             yield OptionList(
                 *(Option(label, id=option_id) for option_id, label in self._options)
+            )
+            yield Static(
+                tip(f"{key('↑/↓')} move  {key('enter')}/click choose  {key('esc')} cancel"),
+                id="menu-keys",
             )
 
     def on_mount(self) -> None:

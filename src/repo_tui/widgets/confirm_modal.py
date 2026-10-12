@@ -8,6 +8,8 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
+from ..hints import key, tip
+
 
 class ConfirmModal(ModalScreen[bool]):
     def __init__(self, title: str, body: str) -> None:
@@ -19,7 +21,9 @@ class ConfirmModal(ModalScreen[bool]):
         with Vertical(id="confirm-box"):
             yield Static(f"[b]{self._title}[/]", id="confirm-title")
             yield Static(self._body, id="confirm-body")
-            yield Static("[b]y[/] yes   [b]n[/] / [b]Esc[/] no", id="confirm-keys")
+            yield Static(
+                tip(f"{key('y')} yes   {key('n')} / {key('Esc')} no"), id="confirm-keys"
+            )
 
     def on_key(self, event: events.Key) -> None:
         event.stop()

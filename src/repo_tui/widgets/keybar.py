@@ -7,13 +7,24 @@ from __future__ import annotations
 
 from textual.widgets import Static
 
-TOP_LEVEL_HINT = (
-    "[b]space[/] actions  [b]?[/] help │ "
-    "[b]b[/]/[b]B[/] new/switch branch  [b]c[/] copy  [b]f[/] forall │ "
-    "[b]/[/] filter  [b]a[/] all  [b]i[/] ignored  [b]r[/] refresh │ [b]q[/] quit"
-)
+from ..hints import key
+
+# Groups of (keys, label), separated by │ on the bar.
+TOP_LEVEL_GROUPS = [
+    [(["space"], "actions"), (["?"], "help")],
+    [(["b", "B"], "branch"), (["c"], "copy"), (["f"], "forall")],
+    [(["/"], "filter"), (["a"], "all"), (["i"], "ignored"), (["r"], "refresh")],
+    [(["o"], "settings"), (["q"], "quit")],
+]
+
+
+def top_level_hint() -> str:
+    return " │ ".join(
+        "  ".join("/".join(key(k) for k in keys) + f" {label}" for keys, label in group)
+        for group in TOP_LEVEL_GROUPS
+    )
 
 
 class KeyBar(Static):
     def show_top_level(self) -> None:
-        self.update(TOP_LEVEL_HINT)
+        self.update(top_level_hint())

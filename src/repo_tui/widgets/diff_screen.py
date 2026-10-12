@@ -6,6 +6,8 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static
 
+from ..hints import close_tip
+
 
 class DiffScreen(ModalScreen[None]):
     BINDINGS = [("escape", "dismiss_screen", "Close"), ("q", "dismiss_screen", "Close")]
@@ -17,7 +19,7 @@ class DiffScreen(ModalScreen[None]):
 
     def compose(self):
         with Vertical(id="diff-box"):
-            yield Static(f"[b]{self._title}[/]  [dim](esc/q to close)[/]", id="diff-title")
+            yield Static(f"[b]{self._title}[/]  {close_tip('esc', 'q')}", id="diff-title")
             log = RichLog(id="diff-log", wrap=False, highlight=False, markup=False)
             yield log
 

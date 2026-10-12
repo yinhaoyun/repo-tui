@@ -20,6 +20,7 @@ from textual.screen import ModalScreen
 from textual.widgets import ProgressBar, RichLog, Static
 
 from .. import problems
+from ..hints import tip
 
 # "45% [4 jobs] (12/27)" / "45% (12/27)"; the counts may carry a unit suffix.
 _PROGRESS_RE = re.compile(
@@ -50,7 +51,7 @@ class BusyModal(ModalScreen[None]):
             yield Static(id="busy-progress")
             if self._show_log:
                 yield RichLog(id="busy-log", wrap=False, highlight=False, markup=False)
-            yield Static("[dim]Please wait — keys are disabled until this finishes.[/]")
+            yield Static(tip("Please wait — keys are disabled until this finishes."))
 
     def on_mount(self) -> None:
         self._update_status()

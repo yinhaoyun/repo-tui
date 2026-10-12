@@ -8,6 +8,11 @@ Config is looked up, in order, at:
 Later files do not merge with earlier ones; the first one found wins, so a
 project-local file fully overrides the user's global defaults. This keeps
 behavior predictable for a tool whose whole point is "what counts as noise".
+
+Choices made in the in-app settings menu (`o`) are saved separately, to
+~/.config/repo-tui/settings.toml ($REPO_TUI_SETTINGS overrides the path),
+and take precedence over the config file, so toggling one in the UI never
+rewrites a hand-edited (or team-shared) config.
 """
 
 from __future__ import annotations
@@ -33,6 +38,7 @@ def default_sync_jobs() -> int:
 @dataclass
 class Config:
     show_all_default: bool = False
+    highlight_hints: bool = True
     max_workers: int = 16
     sync_jobs: int = field(default_factory=default_sync_jobs)
     ignore: IgnoreRules = field(default_factory=IgnoreRules)
@@ -50,10 +56,42 @@ def _candidate_paths(repo_root: Path) -> list[Path]:
 
 
 def load_config(repo_root: Path) -> Config:
+    config = Config()
     for path in _candidate_paths(repo_root):
         if path.is_file():
-            return _parse(path)
-    return Config()
+            config = _parse(path)
+            break
+    settings = load_settings()
+    if isinstance(settings.get("highlight_hints"), bool):
+        config.highlight_hints = settings["highlight_hints"]
+    return config
+
+
+def settings_path() -> Path:
+    env_path = os.environ.get("REPO_TUI_SETTINGS")
+    if env_path:
+        return Path(env_path).expanduser()
+    return Path.home() / ".config" / "repo-tui" / "settings.toml"
+
+
+def load_settings() -> dict[str, Any]:
+    """Settings saved from the in-app menu; {} if none (or unreadable)."""
+    try:
+        with settings_path().open("rb") as fh:
+            return tomllib.load(fh)
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+
+
+def save_setting(name: str, value: bool) -> Path:
+    """Persist one boolean menu setting, keeping any others in the file."""
+    settings = {k: v for k, v in load_settings().items() if isinstance(v, bool)}
+    settings[name] = value
+    path = settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = "".join(f"{k} = {'true' if v else 'false'}\n" for k, v in sorted(settings.items()))
+    path.write_text("# Written by repo-tui's settings menu (o).\n" + body)
+    return path
 
 
 def _parse(path: Path) -> Config:
@@ -70,6 +108,7 @@ def _parse(path: Path) -> Config:
 
     return Config(
         show_all_default=bool(display.get("show_all_default", False)),
+        highlight_hints=bool(display.get("highlight_hints", True)),
         max_workers=int(data.get("performance", {}).get("max_workers", 16)),
         sync_jobs=int(data.get("sync", {}).get("jobs", default_sync_jobs())),
         ignore=IgnoreRules(patterns=list(patterns), per_project=dict(per_project)),

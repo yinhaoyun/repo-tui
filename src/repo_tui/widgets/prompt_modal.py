@@ -7,6 +7,8 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Static
 
+from ..hints import key, tip
+
 
 class PromptModal(ModalScreen[str | None]):
     BINDINGS = [("escape", "cancel", "Cancel")]
@@ -20,6 +22,7 @@ class PromptModal(ModalScreen[str | None]):
         with Vertical(id="prompt-box"):
             yield Static(self._prompt, id="prompt-label")
             yield Input(placeholder=self._placeholder, id="prompt-input")
+            yield Static(tip(f"{key('enter')} confirm  {key('esc')} cancel"), id="prompt-keys")
 
     def on_mount(self) -> None:
         self.query_one("#prompt-input", Input).focus()

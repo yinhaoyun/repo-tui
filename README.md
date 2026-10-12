@@ -185,6 +185,7 @@ right after `repo sync` — is *not* treated as changed on its own.
 | `a` | toggle show-all vs. hide-unchanged |
 | `i` | toggle showing ignored files in the file list |
 | `r` | refresh (re-run git status across the tree) |
+| `o` | settings — e.g. turn highlighted key hints on/off |
 | `q` | quit |
 | `b` | `repo start <branch>` — create a new branch on the selected project (prompts for a name) |
 | `B` | `repo checkout <branch>` — switch to an existing local branch (pick from a list, or type one) |
@@ -212,6 +213,22 @@ current project, jobs running) and the output tail. Sync runs with
 ```toml
 [sync]
 jobs = 4
+```
+
+## Highlighted key hints
+
+Every key hint and usage tip — the bottom bar, the `?` help, the action
+panel, and the prompts in dialogs — is highlighted by default: keys are
+high-contrast keycaps and tips are bold in the theme's accent colour. If
+you'd rather have the plain look (bold keys, dim tips), press `o` and
+toggle "Highlight key hints & tips". The choice is saved to
+`~/.config/repo-tui/settings.toml` (`$REPO_TUI_SETTINGS` overrides the
+path) and wins over the config file. To set the default in the config file
+instead:
+
+```toml
+[display]
+highlight_hints = false
 ```
 
 ## Configuring what counts as noise

@@ -6,6 +6,7 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
+from ..hints import key, tip
 from ..models import FileStatus, Project
 
 _STATUS_LABELS = {
@@ -42,6 +43,10 @@ class ProjectSummary(Static):
             f"local branches: {project.local_branch_count}   "
             f"changes: [b]{project.stat_summary}[/]"
         )
+        if project.files:
+            lines.append(
+                tip(f"{key('tab')} to the file list, then {key('enter')}/click a file for its diff")
+            )
         self.update("\n".join(lines))
 
 
