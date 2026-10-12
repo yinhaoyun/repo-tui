@@ -116,10 +116,37 @@ git pull --ff-only
 uv tool install --editable --reinstall .   # only strictly needed if deps changed
 ```
 
-There's no published PyPI package, so there's nothing to `uv tool upgrade`
-or `pip install --upgrade` from — the git checkout is the only source of truth. If
-`repo-tui update` can't find a git checkout (e.g. you copied the installed
-package elsewhere without its `.git`), it'll tell you to re-clone instead.
+There's no published PyPI package, so there's nothing to `pip install
+--upgrade` from — the git checkout is the only source of truth.
+
+### If `repo-tui update` stops with an error
+
+- **"local changes present in the checkout"**: it never pulls over your own
+  edits. See what they are with `git -C <clone> status`, then commit, stash
+  or discard them and run `repo-tui update` again.
+- **git asks for credentials, or the fetch fails**: the repo is private, so
+  the pull needs the same GitHub access the clone used (`gh auth login`
+  once, or an SSH key for an SSH clone URL).
+- **"couldn't fast-forward"**: the clone has local commits that aren't on
+  GitHub. Push or rebase them by hand in the clone.
+- **"pip install failed" with `No module named pip`**: that machine was
+  installed with uv before `repo-tui update` learned to reinstall through
+  uv. The pull already worked and the editable install is running the new
+  code; finish the reinstall once by hand, and later updates handle it
+  themselves:
+
+  ```sh
+  cd path/to/your/repo-tui/clone
+  uv tool install --editable --reinstall .
+  ```
+
+- **"isn't running from a git checkout"**: it was installed without a clone
+  (e.g. `uv tool install git+https://...`) or the package was copied
+  somewhere without its `.git`. For a `git+` uv install, upgrade with
+  `uv tool upgrade repo-tui`; otherwise re-clone and install as above.
+
+Not sure how a machine's copy was installed? `uv tool list` shows whether
+uv manages it, and `which repo-tui` shows where the command lives.
 
 ## What it shows
 
