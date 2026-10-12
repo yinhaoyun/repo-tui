@@ -12,6 +12,7 @@ from repo_tui.widgets.confirm_modal import ConfirmModal
 from repo_tui.widgets.context_menu import ContextMenu
 from repo_tui.widgets.detail_pane import FileTable
 from repo_tui.widgets.diff_screen import DiffScreen
+from repo_tui.widgets.result_screen import ResultScreen
 from repo_tui.widgets.help_modal import HelpModal
 from repo_tui.widgets.project_list import ProjectList
 from repo_tui.widgets.prompt_modal import PromptModal
@@ -293,7 +294,7 @@ def test_action_panel_detach_calls_repo_sync_dash_d(dirty_tree, monkeypatch):
             await pilot.pause()
 
             assert calls == [["frameworks/base"]]
-            assert isinstance(app.screen_stack[-1], DiffScreen)
+            assert isinstance(app.screen_stack[-1], ResultScreen)
 
     asyncio.run(scenario())
 
@@ -464,7 +465,7 @@ def test_busy_modal_blocks_keys_while_sync_runs(dirty_tree, monkeypatch):
             await app.workers.wait_for_complete()
             await pilot.pause()
             result = app.screen_stack[-1]
-            assert isinstance(result, DiffScreen)
+            assert isinstance(result, ResultScreen)
             assert not any(isinstance(s, BusyModal) for s in app.screen_stack)
 
     asyncio.run(scenario())
@@ -572,7 +573,7 @@ def test_discard_asks_first_then_cleans_stat_but_keeps_ignored(dirty_tree):
             await app.workers.wait_for_complete()
             await pilot.pause()
 
-            assert isinstance(app.screen_stack[-1], DiffScreen)
+            assert isinstance(app.screen_stack[-1], ResultScreen)
             project = next(p for p in app.projects if p.path == "frameworks/base")
             assert project.stat_summary == "clean"
             assert (base / "README.md").read_text() == "hello\n"
@@ -623,5 +624,74 @@ def test_single_project_action_rescans_only_that_project(dirty_tree, monkeypatch
             await pilot.pause()
             await app.workers.wait_for_complete()
             assert sorted(scanned[-1]) == ["build/make", "frameworks/base"]
+
+    asyncio.run(scenario())
+
+
+def test_sync_errors_and_warnings_are_called_out(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        notes = []
+
+        async def failing_sync(repo_root, paths=None, on_output=None, on_progress=None, jobs=None):
+            await on_output("Fetching: 100% (2/2), done")
+            await on_output("warning: project platform/build has local changes")
+            await on_output("error: Cannot checkout platform/build: ManifestInvalidRevisionError")
+            await on_output("Failing repos:")
+            return 1
+
+        monkeypatch.setattr(repo_backend, "sync_projects", failing_sync)
+        monkeypatch.setattr(app, "notify", lambda message, **kw: notes.append((message, kw)))
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("space", "S")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            result = app.screen_stack[-1]
+            assert isinstance(result, ResultScreen)
+            assert result.severity == "error"
+            assert result.status == "failed (exit 1), 2 error(s) and 1 warning(s)"
+            problems_box = str(result.query_one("#result-problems").render())
+            assert "Cannot checkout platform/build" in problems_box
+            assert "has local changes" in problems_box
+            assert "Fetching" not in problems_box
+
+            assert len(notes) == 1
+            message, kw = notes[0]
+            assert kw["severity"] == "error"
+            assert "warning: project platform/build" in message
+
+    asyncio.run(scenario())
+
+
+def test_clean_sync_shows_no_problems_box_or_toast(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        notes = []
+
+        async def ok_sync(repo_root, paths=None, on_output=None, on_progress=None, jobs=None):
+            await on_output("Syncing: 100% (2/2), done")
+            return 0
+
+        monkeypatch.setattr(repo_backend, "sync_projects", ok_sync)
+        monkeypatch.setattr(app, "notify", lambda message, **kw: notes.append((message, kw)))
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("space", "S")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            result = app.screen_stack[-1]
+            assert isinstance(result, ResultScreen)
+            assert (result.status, result.severity) == ("done", "information")
+            assert not result.query("#result-problems")
+            assert notes == []
 
     asyncio.run(scenario())

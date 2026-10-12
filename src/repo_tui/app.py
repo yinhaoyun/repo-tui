@@ -26,6 +26,7 @@ from .widgets.help_modal import HelpModal
 from .widgets.keybar import KeyBar
 from .widgets.project_list import ProjectContextMenuRequested, ProjectHighlighted, ProjectList
 from .widgets.prompt_modal import PromptModal
+from .widgets.result_screen import ResultScreen
 from .widgets.splitter import Splitter
 
 
@@ -210,7 +211,8 @@ class RepoTuiApp(App):
         project: Project | None = None,
     ) -> None:
         """Run a repo command behind a blocking BusyModal, refresh status,
-        then show the command's output. `coro_factory(on_output, on_progress)`
+        then show the command's output in a ResultScreen that pulls out any
+        error/warning lines, plus a toast when there were problems. `coro_factory(on_output, on_progress)`
         starts the command; `command`/`jobs` are only shown in the dialog.
         With `project`, only that project is re-scanned afterwards."""
         header = self.query_one("#header", HeaderBar)
@@ -229,15 +231,23 @@ class RepoTuiApp(App):
         try:
             try:
                 returncode = await coro_factory(on_output, on_progress)
-            except OSError as exc:  # e.g. `repo` not on PATH
+            except Exception as exc:  # noqa: BLE001 - e.g. `repo` not on PATH
                 log_lines.append(f"error: {exc}")
                 returncode = None
             await self._refresh(busy, only=[project] if project else None)
         finally:
             header.set_syncing(False)
             await busy.dismiss()
-        result = "done" if returncode == 0 else f"failed (exit {returncode})"
-        self.push_screen(DiffScreen(f"{title} — {result}", "\n".join(log_lines)))
+        result = ResultScreen(title, log_lines, returncode)
+        self.push_screen(result)
+        if result.severity != "information":
+            first = next((line for _, line in result.problem_lines), "")
+            self.notify(
+                escape(first or result.status),
+                title=f"{title} — {result.status}",
+                severity=result.severity,
+                timeout=10,
+            )
 
     def _sync_project(self, project: Project) -> None:
         self.run_worker(

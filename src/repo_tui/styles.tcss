@@ -92,6 +92,49 @@ DiffScreen {
     padding: 0 1;
 }
 
+ResultScreen {
+    align: center middle;
+}
+
+#result-box {
+    width: 90%;
+    height: 90%;
+    background: $panel;
+    border: round $success;
+}
+
+#result-box.-warning {
+    border: round $warning;
+}
+
+#result-box.-error {
+    border: round $error;
+}
+
+#result-title {
+    height: 1;
+    padding: 0 1;
+    background: $primary-background;
+}
+
+#result-problems {
+    height: auto;
+    max-height: 12;
+    margin: 1 1 0 1;
+    padding: 0 1;
+    border: round $error;
+    border-title-color: $error;
+}
+
+#result-box.-warning #result-problems {
+    border: round $warning;
+}
+
+#result-log {
+    height: 1fr;
+    padding: 0 1;
+}
+
 PromptModal {
     align: center middle;
 }

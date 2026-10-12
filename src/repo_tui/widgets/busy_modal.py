@@ -13,10 +13,13 @@ import re
 import time
 
 from rich.markup import escape
+from rich.text import Text
 from textual import events
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import ProgressBar, RichLog, Static
+
+from .. import problems
 
 # "45% [4 jobs] (12/27)" / "45% (12/27)"; the counts may carry a unit suffix.
 _PROGRESS_RE = re.compile(
@@ -70,7 +73,8 @@ class BusyModal(ModalScreen[None]):
             self._update_status()
 
     def add_output(self, line: str) -> None:
-        self.query_one("#busy-log", RichLog).write(line)
+        style = problems.style_for(problems.classify(line))
+        self.query_one("#busy-log", RichLog).write(Text(line, style=style))
         self._track_progress(line)
 
     def set_progress(self, line: str) -> None:
