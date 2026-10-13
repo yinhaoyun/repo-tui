@@ -99,6 +99,13 @@ class ProjectList(DataTable):
         elif self._row_paths:
             self.move_cursor(row=0)
 
+    def select_path(self, path: str) -> bool:
+        """Move the cursor to `path`'s row; False if it isn't shown."""
+        if path not in self._row_paths:
+            return False
+        self.move_cursor(row=self._row_paths.index(path))
+        return True
+
     def project_at_cursor(self) -> Project | None:
         if not self._row_paths or self.cursor_row is None:
             return None

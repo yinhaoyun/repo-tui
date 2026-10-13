@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Iterable, Optional
 
 from .ignore import IgnoreRules
-from .models import FileStatus, Project
+from .models import FileStatus, HeadChange, Project
 
 _GIT_TIMEOUT = 15
 
@@ -167,6 +167,75 @@ def collect_all(
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         return list(pool.map(collect, projects))
+
+
+def head_commits(projects: Iterable[Project], max_workers: int = 16) -> dict[str, str]:
+    """{project path: HEAD sha} ('' when it can't be read), in parallel."""
+
+    def head(project: Project) -> tuple[str, str]:
+        try:
+            sha = _run_git(project.abs_path, ["rev-parse", "--verify", "-q", "HEAD"]).strip()
+        except (OSError, subprocess.TimeoutExpired):
+            sha = ""
+        return project.path, sha
+
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        return dict(pool.map(head, projects))
+
+
+def head_changes(
+    projects: Iterable[Project],
+    before: dict[str, str],
+    after: dict[str, str],
+    max_workers: int = 16,
+) -> list[HeadChange]:
+    """Projects whose HEAD moved between `before` and `after`, with how many
+    commits came in and how many are no longer on HEAD. Sorted by path."""
+    moved = [
+        p for p in projects
+        if before.get(p.path) and after.get(p.path) and before[p.path] != after[p.path]
+    ]
+
+    def count(project: Project, revs: str) -> int:
+        out = _run_git(project.abs_path, ["rev-list", "--count", revs]).strip()
+        return int(out) if out.isdigit() else 0
+
+    def change(project: Project) -> HeadChange:
+        old, new = before[project.path], after[project.path]
+        return HeadChange(
+            project.path, old, new,
+            added=count(project, f"{old}..{new}"),
+            dropped=count(project, f"{new}..{old}"),
+        )
+
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        return sorted(pool.map(change, moved), key=lambda c: c.path)
+
+
+_LOG_LIMIT = 200
+_LOG_FORMAT = "--format=%h  %s  (%an, %ar)"
+
+
+def describe_head_change(project: Project, change: HeadChange) -> str:
+    """Text for the sync report's detail pane: the move, a diff summary, and
+    the commits it brought in (and dropped, if any)."""
+    cwd = project.abs_path
+    lines = [f"{change.old[:12]} → {change.new[:12]}"]
+    stat = _run_git(cwd, ["diff", "--shortstat", change.old, change.new]).strip()
+    if stat:
+        lines.append(stat)
+    for revs, heading, total in (
+        (f"{change.old}..{change.new}", "New commits", change.added),
+        (f"{change.new}..{change.old}", "No longer on HEAD", change.dropped),
+    ):
+        if not total:
+            continue
+        lines += ["", f"{heading} ({total}):"]
+        log = _run_git(cwd, ["log", "--no-color", _LOG_FORMAT, "-n", str(_LOG_LIMIT), revs])
+        lines += [f"  {line}" for line in log.splitlines()]
+        if total > _LOG_LIMIT:
+            lines.append(f"  …and {total - _LOG_LIMIT} more")
+    return "\n".join(lines)
 
 
 def read_file_diff(project: Project, rel_path: str, staged: bool = False) -> str:

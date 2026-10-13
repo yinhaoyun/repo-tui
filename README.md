@@ -150,8 +150,22 @@ uv manages it, and `which repo-tui` shows where the command lives.
 
 ## What it shows
 
-- **Header**: manifest name/branch, project counts (total vs. changed), and
-  when the tree was last refreshed.
+- **Header**: manifest name/branch, project counts (total vs. changed),
+  what the last sync changed, and when the tree was last refreshed. Two
+  parts are clickable:
+  - **"N changed"** opens a summary of why each project counts as changed
+    (files changed, unpushed commits, behind upstream, on a branch, error);
+    `Enter` or a click on a row jumps to that project. Also `Space w`.
+  - **"last sync: N updated"** (shown once a sync or detach has run) opens
+    the sync report: every project whose checked-out commit moved, with
+    `+new`/`−dropped` commit counts. Pick one to see old → new commit, a
+    diff summary, and the commits that came in (or, after a detach, the
+    ones no longer on HEAD). Also `Space u`, or `u` on the sync's output
+    screen.
+
+  repo-tui records each affected project's HEAD before every sync, sync
+  all and detach, and compares it afterwards, so the report reflects
+  exactly that run.
 - **Left pane**: one row per project. Unchanged projects are hidden by
   default (press `a` to show everything). Each row shows the branch (plus
   ahead/behind counts) and a rough `+added/-deleted` / `?untracked` stat,
@@ -195,6 +209,8 @@ right after `repo sync` — is *not* treated as changed on its own.
 | `Space` then `r` | refresh only the selected project (same as `R`) |
 | `Space` then `s` | `repo sync` the selected project |
 | `Space` then `S` | `repo sync` the whole tree |
+| `Space` then `u` | last sync report — which projects moved to which commit, and what came in (also: click "last sync" in the header) |
+| `Space` then `w` | why each project counts as changed (also: click "N changed" in the header) |
 | `Space` then `d` | `repo sync -d -l` — detach the selected project to its manifest revision (local only, no fetch) |
 | `Space` then `x` | discard the selected project's changes so its Stat is clean: tracked changes revert to HEAD, untracked files are deleted; files hidden by your ignore rules, commits and the branch are kept (asks y/N first) |
 | `Space` then `b`/`B`/`c`/`f` | same as the direct keys |

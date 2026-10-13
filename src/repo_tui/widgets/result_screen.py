@@ -13,7 +13,8 @@ from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static
 
 from .. import problems
-from ..hints import close_tip
+from ..hints import close_tip, key, tip
+from ..models import SyncReport
 
 _MAX_PROBLEMS_SHOWN = 10
 
@@ -42,10 +43,21 @@ def summarize(returncode: Optional[int], errors: int, warnings: int) -> tuple[st
 
 
 class ResultScreen(ModalScreen[None]):
-    BINDINGS = [("escape", "dismiss_screen", "Close"), ("q", "dismiss_screen", "Close")]
+    BINDINGS = [
+        ("escape", "dismiss_screen", "Close"),
+        ("q", "dismiss_screen", "Close"),
+        ("u", "show_report", "Sync report"),
+    ]
 
-    def __init__(self, title: str, lines: list[str], returncode: Optional[int]) -> None:
+    def __init__(
+        self,
+        title: str,
+        lines: list[str],
+        returncode: Optional[int],
+        report: Optional[SyncReport] = None,
+    ) -> None:
         self._title = title
+        self._report = report
         self._lines = lines
         self._levels = [problems.classify(line) for line in lines]
         self.problem_lines = [
@@ -65,6 +77,13 @@ class ResultScreen(ModalScreen[None]):
                 f"  {close_tip('esc', 'q')}",
                 id="result-title",
             )
+            if self._report is not None:
+                count = len(self._report.changes)
+                yield Static(
+                    f"[b cyan]{count} project(s) moved to a new commit[/]  "
+                    + tip(f"press {key('u')} to see which, and what came in"),
+                    id="result-updates",
+                )
             if self.problem_lines:
                 shown = self.problem_lines[:_MAX_PROBLEMS_SHOWN]
                 body = Text()
@@ -88,3 +107,8 @@ class ResultScreen(ModalScreen[None]):
 
     def action_dismiss_screen(self) -> None:
         self.dismiss(None)
+
+    def action_show_report(self) -> None:
+        if self._report is not None:
+            self.dismiss(None)
+            self.app.action_show_sync_report()

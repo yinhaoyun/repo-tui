@@ -37,6 +37,8 @@ HELP_SECTIONS = [
     ("Action panel — press space, then a key (stays open until you choose)", [
         ("space s", "repo sync — selected project only"),
         ("space S", "repo sync — entire tree"),
+        ("space u", "last sync report: which projects got which commits"),
+        ("space w", "why each project counts as changed"),
         ("space d", "repo sync -d -l — detach to manifest revision (no fetch)"),
         ("space x", "discard changes — revert to HEAD + delete untracked (asks y/N)"),
         ("space r", "refresh only the selected project (same as R)"),
@@ -58,6 +60,7 @@ def help_text() -> str:
     lines += [
         "",
         tip("Tip: right-click a project row for its actions as a menu."),
+        tip('Tip: click "N changed" or "last sync" in the header for details.'),
         tip("Press any key to close this help."),
     ]
     return "\n".join(lines)

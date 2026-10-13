@@ -9,6 +9,26 @@ HeaderBar {
     padding: 0 1;
 }
 
+HeaderBar > Static {
+    width: auto;
+    height: 1;
+}
+
+HeaderBar > #hdr-status {
+    width: 1fr;
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
+}
+
+.hdr-link {
+    text-style: underline;
+}
+
+.hdr-link:hover {
+    background: $boost;
+    text-style: bold underline;
+}
+
 #body {
     height: 1fr;
 }
@@ -130,6 +150,11 @@ ResultScreen {
 
 #result-box.-warning #result-problems {
     border: round $warning;
+}
+
+#result-updates {
+    height: auto;
+    padding: 1 1 0 1;
 }
 
 #result-log {
@@ -329,4 +354,55 @@ SettingsScreen {
     height: 1;
     margin-top: 1;
     padding: 0 1;
+}
+
+SyncReportScreen, ChangedScreen {
+    align: center middle;
+}
+
+#report-box, #changed-box {
+    width: 90%;
+    height: 90%;
+    background: $panel;
+    border: round $accent;
+}
+
+#report-title, #changed-title {
+    height: 1;
+    padding: 0 1;
+    background: $primary-background;
+}
+
+#report-summary {
+    height: auto;
+    padding: 1 1 0 1;
+}
+
+#report-body {
+    height: 1fr;
+    margin-top: 1;
+}
+
+#report-list {
+    width: 40%;
+    height: 1fr;
+}
+
+#report-detail {
+    width: 1fr;
+    height: 1fr;
+    padding: 0 1;
+}
+
+#report-keys, #changed-keys {
+    height: 1;
+    padding: 0 1;
+}
+
+#report-empty {
+    padding: 1;
+}
+
+#changed-table {
+    height: 1fr;
 }

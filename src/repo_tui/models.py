@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 
 @dataclass
@@ -104,6 +105,28 @@ class Project:
         if self.behind:
             label += f" ↓{self.behind}"
         return label
+
+
+@dataclass
+class HeadChange:
+    """A project whose checked-out commit moved during a sync."""
+
+    path: str
+    old: str  # full sha before
+    new: str  # full sha after
+    added: int = 0  # commits in old..new (what the sync brought in)
+    dropped: int = 0  # commits in new..old (no longer on HEAD, e.g. after detach)
+
+
+@dataclass
+class SyncReport:
+    """What the last sync (or detach) changed, for the header and its report."""
+
+    title: str
+    finished_at: float
+    returncode: Optional[int]
+    scanned: int  # projects whose commit was compared
+    changes: list[HeadChange] = field(default_factory=list)
 
 
 @dataclass

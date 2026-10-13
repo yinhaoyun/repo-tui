@@ -25,6 +25,8 @@ PROJECT_ACTIONS = [
 TREE_ACTIONS = [
     ("S", "sync_all", "sync all"),
     ("f", "forall", "forall <cmd>"),
+    ("u", "show_sync_report", "last sync report"),
+    ("w", "show_changed", "why changed"),
 ]
 ACTION_KEYS = {key: action for key, action, _ in PROJECT_ACTIONS + TREE_ACTIONS}
 EXIT_KEYS = {"escape", "space"}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import time
 from pathlib import Path
 
 from rich.markup import escape
@@ -16,9 +17,10 @@ from . import config as config_mod
 from . import git_backend
 from . import hints
 from . import repo_backend
-from .models import Project, TreeInfo
+from .models import Project, SyncReport, TreeInfo
 from .widgets.action_panel import ActionPanel
 from .widgets.busy_modal import BusyModal
+from .widgets.changed_screen import ChangedScreen
 from .widgets.confirm_modal import ConfirmModal
 from .widgets.context_menu import ContextMenu
 from .widgets.detail_pane import DetailPane, FileTable
@@ -31,6 +33,7 @@ from .widgets.prompt_modal import PromptModal
 from .widgets.result_screen import ResultScreen
 from .widgets.settings_screen import SettingsScreen
 from .widgets.splitter import Splitter
+from .widgets.sync_report import SyncReportScreen
 
 
 class FilterInput(Input):
@@ -79,6 +82,7 @@ class RepoTuiApp(App):
         self.show_ignored = False
         self.search = ""
         self._auto_timer = None
+        self.sync_report: SyncReport | None = None
         # Bumped by every foreground status scan, so a background scan that
         # was overtaken by one throws its (now older) results away.
         self._scan_generation = 0
@@ -296,17 +300,30 @@ class RepoTuiApp(App):
         command: str = "",
         jobs: int | None = None,
         project: Project | None = None,
+        track_updates: bool = False,
     ) -> None:
         """Run a repo command behind a blocking BusyModal, refresh status,
         then show the command's output in a ResultScreen that pulls out any
-        error/warning lines, plus a toast when there were problems. `coro_factory(on_output, on_progress)`
-        starts the command; `command`/`jobs` are only shown in the dialog.
-        With `project`, only that project is re-scanned afterwards."""
+        error/warning lines, plus a toast when there were problems.
+        `coro_factory(on_output, on_progress)` starts the command;
+        `command`/`jobs` are only shown in the dialog. With `project`, only
+        that project is re-scanned afterwards. With `track_updates` (sync,
+        detach), each project's HEAD is recorded before and compared after,
+        and what moved becomes the new sync report."""
         header = self.query_one("#header", HeaderBar)
         header.set_syncing(True)
         busy = BusyModal(title, command=command, jobs=jobs)
         await self.push_screen(busy)
         log_lines: list[str] = []
+        targets = [project] if project else list(self.projects)
+        before: dict[str, str] = {}
+        report: SyncReport | None = None
+        if track_updates:
+            busy.set_phase("Recording current commits…")
+            before = await asyncio.to_thread(
+                git_backend.head_commits, targets, self.config.max_workers
+            )
+            busy.set_phase("Running…")
 
         async def on_output(line: str) -> None:
             log_lines.append(line)
@@ -321,13 +338,16 @@ class RepoTuiApp(App):
             except Exception as exc:  # noqa: BLE001 - e.g. `repo` not on PATH
                 log_lines.append(f"error: {exc}")
                 returncode = None
+            if track_updates:
+                report = await self._compare_commits(busy, title, returncode, targets, before)
             await self._refresh(busy, only=[project] if project else None)
         finally:
             header.set_syncing(False)
             await busy.dismiss()
-        result = ResultScreen(title, log_lines, returncode)
+        result = ResultScreen(title, log_lines, returncode, report)
         if result.severity == "information" and self.config.result_screen == "problems":
-            self.notify(f"{escape(title)} — {result.status}", timeout=4)
+            updated = f", {len(report.changes)} updated" if report else ""
+            self.notify(f"{escape(title)} — {result.status}{updated}", timeout=4)
             return
         self.push_screen(result)
         if result.severity != "information":
@@ -338,6 +358,49 @@ class RepoTuiApp(App):
                 severity=result.severity,
                 timeout=10,
             )
+
+    async def _compare_commits(
+        self,
+        busy: BusyModal,
+        title: str,
+        returncode: int | None,
+        targets: list[Project],
+        before: dict[str, str],
+    ) -> SyncReport:
+        busy.set_phase("Comparing commits…")
+        workers = self.config.max_workers
+        after = await asyncio.to_thread(git_backend.head_commits, targets, workers)
+        changes = await asyncio.to_thread(
+            git_backend.head_changes, targets, before, after, workers
+        )
+        report = SyncReport(title, time.time(), returncode, len(targets), changes)
+        self.sync_report = report
+        self.query_one("#header", HeaderBar).set_report(report)
+        return report
+
+    def action_show_sync_report(self) -> None:
+        if self.sync_report is None:
+            self.notify("No sync has run yet in this session.", timeout=3)
+            return
+        self.push_screen(
+            SyncReportScreen(self.sync_report, {p.path: p for p in self.projects})
+        )
+
+    def action_show_changed(self) -> None:
+        def handle(path: str | None) -> None:
+            if path:
+                self._jump_to_project(path)
+
+        self.push_screen(ChangedScreen(self.projects), handle)
+
+    def _jump_to_project(self, path: str) -> None:
+        project_list = self.query_one("#project-list", ProjectList)
+        if not project_list.select_path(path):  # hidden by the filter
+            self.search = ""
+            self.query_one("#filter-bar", FilterInput).value = ""
+            self._apply_filters()
+            project_list.select_path(path)
+        project_list.focus()
 
     def _sync_project(self, project: Project) -> None:
         self.run_worker(
@@ -353,6 +416,7 @@ class RepoTuiApp(App):
                 command=" ".join(repo_backend.sync_args([project.path], self.config.sync_jobs)),
                 jobs=self.config.sync_jobs,
                 project=project,
+                track_updates=True,
             ),
             exclusive=True,
             group="sync",
@@ -388,6 +452,7 @@ class RepoTuiApp(App):
                 ),
                 command=" ".join(repo_backend.sync_args(jobs=self.config.sync_jobs)),
                 jobs=self.config.sync_jobs,
+                track_updates=True,
             ),
             exclusive=True,
             group="sync",
@@ -402,6 +467,7 @@ class RepoTuiApp(App):
                 ),
                 command=" ".join(repo_backend.sync_args([project.path], detach=True)),
                 project=project,
+                track_updates=True,
             ),
             exclusive=True,
             group="sync",

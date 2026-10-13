@@ -8,6 +8,8 @@ from repo_tui import git_backend, repo_backend
 from repo_tui.app import RepoTuiApp
 from repo_tui.widgets.action_panel import ActionPanel
 from repo_tui.widgets.busy_modal import BusyModal
+from repo_tui.widgets.changed_screen import ChangedScreen
+from repo_tui.widgets.sync_report import SyncReportScreen
 from repo_tui.widgets.confirm_modal import ConfirmModal
 from repo_tui.widgets.context_menu import ContextMenu
 from repo_tui.widgets.detail_pane import FileTable
@@ -905,5 +907,86 @@ def test_refresh_selected_project_rescans_only_that_one(dirty_tree, monkeypatch,
             assert scanned == [["build/make"]]
             make = next(p for p in app.projects if p.path == "build/make")
             assert make.untracked_count == 1 and make.is_changed
+
+    asyncio.run(scenario())
+
+
+def _commit(cwd, name, subject):
+    (cwd / name).write_text(subject + "\n")
+    _git(cwd, "add", name)
+    _git(cwd, "commit", "-q", "-m", subject)
+
+
+def test_sync_reports_which_projects_got_which_commits(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+
+        async def fake_sync(repo_root, paths=None, on_output=None, on_progress=None, jobs=None):
+            # what a real sync would do: new upstream commits land in build/make
+            make = dirty_tree / "build/make"
+            _commit(make, "a.mk", "Add rule A")
+            _commit(make, "b.mk", "Add rule B")
+            await on_output("Syncing: 100% (2/2), done")
+            return 0
+
+        monkeypatch.setattr(repo_backend, "sync_projects", fake_sync)
+
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert not app.query_one("#hdr-sync").display  # no sync yet
+
+            await pilot.press("space", "S")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            report = app.sync_report
+            assert report.scanned == 2
+            assert [(c.path, c.added, c.dropped) for c in report.changes] == [("build/make", 2, 0)]
+            assert "1 updated" in str(app.query_one("#hdr-sync").content)
+
+            result = app.screen_stack[-1]
+            assert isinstance(result, ResultScreen)
+            assert "1 project(s) moved" in str(result.query_one("#result-updates").content)
+            await pilot.press("u")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            screen = app.screen_stack[-1]
+            assert isinstance(screen, SyncReportScreen)
+            detail = "\n".join(line.text for line in screen.query_one("#report-detail").lines)
+            assert "Add rule A" in detail and "Add rule B" in detail
+            assert "New commits (2)" in detail
+            await pilot.press("escape")
+            await pilot.pause()
+
+            # the header item reopens it
+            await pilot.click("#hdr-sync")
+            await pilot.pause()
+            assert isinstance(app.screen_stack[-1], SyncReportScreen)
+
+    asyncio.run(scenario())
+
+
+def test_clicking_changed_count_explains_and_jumps_to_project(dirty_tree):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.click("#hdr-changed")
+            await pilot.pause()
+            screen = app.screen_stack[-1]
+            assert isinstance(screen, ChangedScreen)
+            table = screen.query_one("#changed-table")
+            row = [str(cell) for cell in table.get_row("frameworks/base")]
+            assert "file(s) changed" in row[2] and "on branch main" in row[2]
+
+            await pilot.press("enter")
+            await pilot.pause()
+            assert not isinstance(app.screen_stack[-1], ChangedScreen)
+            assert app._selected_project().path == "frameworks/base"
 
     asyncio.run(scenario())

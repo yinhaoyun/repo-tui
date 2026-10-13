@@ -113,3 +113,43 @@ def test_discard_changes_restores_renames_and_staged_files(tmp_path):
     assert project.files == []
     assert (tmp_path / "old.txt").exists() and not (tmp_path / "new.txt").exists()
     assert (tmp_path / "keep.txt").read_text() == "k\n"
+
+
+
+def test_head_changes_counts_new_and_dropped_commits(tmp_path):
+    import subprocess
+
+    from repo_tui import git_backend
+    from repo_tui.models import Project
+
+    env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t", "PATH": "/usr/bin:/bin"}
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True, env=env)
+
+    def commit(subject):
+        (tmp_path / "f").write_text(subject)
+        git("add", "f")
+        git("commit", "-q", "-m", subject)
+
+    git("init", "-q")
+    commit("base")
+    project = Project(path="p", name="p", abs_path=tmp_path)
+    base = git_backend.head_commits([project])
+    commit("topic 1")
+    commit("topic 2")
+    topic = git_backend.head_commits([project])
+
+    # moving forward: 2 commits came in
+    [forward] = git_backend.head_changes([project], base, topic)
+    assert (forward.added, forward.dropped) == (2, 0)
+    text = git_backend.describe_head_change(project, forward)
+    assert "New commits (2)" in text and "topic 2" in text
+
+    # detaching back to base: nothing new, 2 no longer on HEAD
+    [back] = git_backend.head_changes([project], topic, base)
+    assert (back.added, back.dropped) == (0, 2)
+    assert "No longer on HEAD (2)" in git_backend.describe_head_change(project, back)
+
+    assert git_backend.head_changes([project], base, base) == []
