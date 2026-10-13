@@ -872,3 +872,38 @@ def test_every_key_hint_follows_the_highlight_setting(on):
     for text in (top_level_hint(), help_text()):
         assert ("[b #000000 on $warning]" in text) is on
     assert ("[b $text-warning]Press any key" in help_text()) is on
+
+
+@pytest.mark.parametrize("keys", [("R",), ("space", "r")])
+def test_refresh_selected_project_rescans_only_that_one(dirty_tree, monkeypatch, keys):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("a")
+            await pilot.pause()
+            _select_project(app.query_one("#project-list", ProjectList), "build/make")
+            await pilot.pause()
+
+            scanned = []
+            real_collect_all = git_backend.collect_all
+
+            def spy(projects, *args, **kwargs):
+                projects = list(projects)
+                scanned.append([p.path for p in projects])
+                return real_collect_all(projects, *args, **kwargs)
+
+            monkeypatch.setattr(git_backend, "collect_all", spy)
+            (dirty_tree / "build/make/edited_elsewhere.c").write_text("int y;\n")
+
+            await pilot.press(*keys)
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert scanned == [["build/make"]]
+            make = next(p for p in app.projects if p.path == "build/make")
+            assert make.untracked_count == 1 and make.is_changed
+
+    asyncio.run(scenario())

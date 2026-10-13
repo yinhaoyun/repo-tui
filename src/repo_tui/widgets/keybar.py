@@ -13,7 +13,7 @@ from ..hints import key
 TOP_LEVEL_GROUPS = [
     [(["space"], "actions"), (["?"], "help")],
     [(["b", "B"], "branch"), (["c"], "copy"), (["f"], "forall")],
-    [(["/"], "filter"), (["a"], "all"), (["i"], "ignored"), (["r"], "refresh")],
+    [(["/"], "filter"), (["a"], "all"), (["i"], "ignored"), (["r", "R"], "refresh")],
     [(["o"], "settings"), (["q"], "quit")],
 ]
 

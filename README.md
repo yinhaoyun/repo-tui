@@ -185,12 +185,14 @@ right after `repo sync` — is *not* treated as changed on its own.
 | `a` | toggle show-all vs. hide-unchanged |
 | `i` | toggle showing ignored files in the file list |
 | `r` | refresh (re-run git status across the tree) |
+| `R` | refresh only the selected project — quick, for when you know just that one changed (also `Space r` and the right-click menu) |
 | `o` | settings — theme, highlighted hints, sync jobs, sort, auto-refresh, … (see below) |
 | `q` | quit |
 | `b` | `repo start <branch>` — create a new branch on the selected project (prompts for a name) |
 | `B` | `repo checkout <branch>` — switch to an existing local branch (pick from a list, or type one) |
 | `c` | copy the selected project's absolute path |
 | `f` | `repo forall -c <command>` across the tree (prompts for the command) |
+| `Space` then `r` | refresh only the selected project (same as `R`) |
 | `Space` then `s` | `repo sync` the selected project |
 | `Space` then `S` | `repo sync` the whole tree |
 | `Space` then `d` | `repo sync -d -l` — detach the selected project to its manifest revision (local only, no fetch) |
@@ -201,10 +203,10 @@ right after `repo sync` — is *not* treated as changed on its own.
 Keys that ask before doing anything (`b`, `B`, `c`, `f`) work directly.
 Keys that run straight away and change the checkout (`s`, `S`, `d`, `x`) are only
 available from the `Space` action panel, so a stray keypress can't trigger
-a sync. The per-project actions (`s`, `d`, `x`, `b`/`B`, `c`) are also available
+a sync. The per-project actions (`r`, `s`, `d`, `x`, `b`/`B`, `c`) are also available
 by right-clicking a project row.
 
-While a `repo` command or a status refresh (at startup, `r`, and after every
+While a `repo` command or a status refresh (at startup, `r`/`R`, and after every
 `repo` command) runs, a dialog blocks all other keys and clicks. A refresh
 shows how many projects have been scanned so far. For `repo sync` it shows the command line, repo's live progress (percentage,
 current project, jobs running) and the output tail. Sync runs with

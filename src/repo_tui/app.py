@@ -55,6 +55,7 @@ class RepoTuiApp(App):
         Binding("a", "toggle_show_all", "Show all"),
         Binding("i", "toggle_show_ignored", "Show ignored"),
         Binding("r", "refresh_status", "Refresh"),
+        Binding("R", "refresh_project", "Refresh project"),
         Binding("o", "settings", "Settings"),
         Binding("q", "quit", "Quit"),
         # Safe actions (each opens a prompt/picker first, or is harmless) sit on
@@ -129,7 +130,8 @@ class RepoTuiApp(App):
         self._scan_generation += 1
         own_dialog = busy is None
         if busy is None:
-            busy = BusyModal("Refreshing status", show_log=False)
+            what = only[0].path if only is not None and len(only) == 1 else "status"
+            busy = BusyModal(f"Refreshing {what}", show_log=False)
             await self.push_screen(busy)
         busy.set_phase("Refreshing status…")
         header = self.query_one("#header", HeaderBar)
@@ -238,6 +240,15 @@ class RepoTuiApp(App):
 
     def action_refresh_status(self) -> None:
         self.run_worker(self._refresh(), exclusive=True, group="refresh")
+
+    def action_refresh_project(self) -> None:
+        project = self._selected_project()
+        if project is not None:
+            self._refresh_project(project)
+
+    def _refresh_project(self, project: Project) -> None:
+        """Re-scan just this project, e.g. after editing it outside repo-tui."""
+        self.run_worker(self._refresh(only=[project]), exclusive=True, group="refresh")
 
     def action_settings(self) -> None:
         self.push_screen(
@@ -512,6 +523,7 @@ class RepoTuiApp(App):
 
     def _open_context_menu(self, project: Project) -> None:
         options = [
+            ("refresh", "Refresh status"),
             ("sync", "Sync (repo sync)"),
             ("detach", "Detach to manifest revision (repo sync -d)"),
             ("switch", "Switch branch…"),
@@ -521,7 +533,9 @@ class RepoTuiApp(App):
         ]
 
         def handle(choice: str | None) -> None:
-            if choice == "sync":
+            if choice == "refresh":
+                self._refresh_project(project)
+            elif choice == "sync":
                 self._sync_project(project)
             elif choice == "detach":
                 self._detach_project(project)
