@@ -1,6 +1,6 @@
-"""Bottom key-binding bar: the always-on keys. Actions that run immediately
-(sync, detach, sync all) live behind Space, which opens the ActionPanel
-listing every action key.
+"""Bottom key-binding bar: the always-on keys, none of which can change a
+checkout. Everything that does (sync, detach, branch, checkout, discard,
+forall) lives behind Space, which opens the ActionPanel listing them.
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ from ..hints import key
 # Groups of (keys, label), separated by │ on the bar.
 TOP_LEVEL_GROUPS = [
     [(["space"], "actions"), (["?"], "help")],
-    [(["b", "B"], "branch"), (["c"], "copy"), (["f"], "forall")],
-    [(["/"], "filter"), (["a"], "all"), (["i"], "ignored"), (["r", "R"], "refresh")],
+    [(["r", "R"], "refresh"), (["w"], "why"), (["u"], "last sync"), (["y"], "copy")],
+    [(["/"], "filter"), (["a"], "all"), (["i"], "ignored")],
     [(["o"], "settings"), (["q"], "quit")],
 ]
 

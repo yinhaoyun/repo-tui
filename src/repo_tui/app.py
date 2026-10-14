@@ -57,17 +57,17 @@ class RepoTuiApp(App):
         Binding("/", "toggle_filter", "Filter", show=False),
         Binding("a", "toggle_show_all", "Show all"),
         Binding("i", "toggle_show_ignored", "Show ignored"),
-        Binding("r", "refresh_status", "Refresh"),
-        Binding("R", "refresh_project", "Refresh project"),
+        # Lowercase acts on the selected project, Shift on the whole tree --
+        # the same rule as s/S in the Space action panel.
+        Binding("r", "refresh_project", "Refresh project"),
+        Binding("R", "refresh_status", "Refresh all"),
+        Binding("w", "show_changed", "Why changed"),
+        Binding("u", "show_sync_report", "Last sync report"),
+        Binding("y", "copy_path", "Copy path"),
         Binding("o", "settings", "Settings"),
         Binding("q", "quit", "Quit"),
-        # Safe actions (each opens a prompt/picker first, or is harmless) sit on
-        # the top layer; ones that run immediately (sync, detach, sync all) are
-        # only reachable through the Space action panel.
-        Binding("b", "start_branch", "New branch"),
-        Binding("B", "switch_branch", "Switch branch"),
-        Binding("c", "copy_path", "Copy path"),
-        Binding("f", "forall", "Forall"),
+        # The top layer only looks: anything that changes a checkout (sync,
+        # detach, branch, checkout, discard, forall) is behind Space.
         Binding("space", "open_action_panel", "Actions"),
     ]
 
@@ -596,7 +596,7 @@ class RepoTuiApp(App):
             ("refresh", "Refresh status"),
             ("sync", "Sync (repo sync)"),
             ("detach", "Detach to manifest revision (repo sync -d)"),
-            ("switch", "Switch branch…"),
+            ("switch", "Checkout branch…"),
             ("start", "Start new branch…"),
             ("discard", "Discard changes…"),
             ("copy", "Copy path"),

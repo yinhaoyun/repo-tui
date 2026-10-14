@@ -155,12 +155,12 @@ uv manages it, and `which repo-tui` shows where the command lives.
   parts are clickable:
   - **"N changed"** opens a summary of why each project counts as changed
     (files changed, unpushed commits, behind upstream, on a branch, error);
-    `Enter` or a click on a row jumps to that project. Also `Space w`.
+    `Enter` or a click on a row jumps to that project. Also `w`.
   - **"last sync: N updated"** (shown once a sync or detach has run) opens
     the sync report: every project whose checked-out commit moved, with
     `+new`/`−dropped` commit counts. Pick one to see old → new commit, a
     diff summary, and the commits that came in (or, after a detach, the
-    ones no longer on HEAD). Also `Space u`, or `u` on the sync's output
+    ones no longer on HEAD). Also `u`, here or on the sync's output
     screen.
 
   repo-tui records each affected project's HEAD before every sync, sync
@@ -173,8 +173,9 @@ uv manages it, and `which repo-tui` shows where the command lives.
 - **Right pane**: full detail for the selected project — branch info, whether
   it's off the manifest-pinned revision, and the file list. Select a file and
   press Enter (or click) to see its full diff.
-- **Bottom bar**: the always-on keys. Press `Space` to open the action
-  panel — a box listing every action key, grouped into "this project" and
+- **Bottom bar**: the always-on keys, none of which can change a checkout.
+  Press `Space` to open the action panel — a box listing every key that
+  does (sync, detach, branch, checkout, discard, forall), grouped into "this project" and
   "whole tree", with the target project in its title. It stays open until
   you press an action key (runs it, then closes), or `Esc`/`Space` to exit.
   Right-clicking a project row opens the per-project actions as a menu.
@@ -198,29 +199,35 @@ right after `repo sync` — is *not* treated as changed on its own.
 | `/` | filter projects by path/name |
 | `a` | toggle show-all vs. hide-unchanged |
 | `i` | toggle showing ignored files in the file list |
-| `r` | refresh (re-run git status across the tree) |
-| `R` | refresh only the selected project — quick, for when you know just that one changed (also `Space r` and the right-click menu) |
+| `r` | refresh only the selected project — quick, for when you know just that one changed (also the right-click menu) |
+| `R` | refresh all (re-run git status across the tree) |
+| `w` | why each project counts as changed (also: click "N changed" in the header) |
+| `u` | last sync report — which projects moved to which commit, and what came in (also: click "last sync" in the header) |
+| `y` | copy (yank) the selected project's absolute path |
 | `o` | settings — theme, highlighted hints, sync jobs, sort, auto-refresh, … (see below) |
 | `q` | quit |
-| `b` | `repo start <branch>` — create a new branch on the selected project (prompts for a name) |
-| `B` | `repo checkout <branch>` — switch to an existing local branch (pick from a list, or type one) |
-| `c` | copy the selected project's absolute path |
-| `f` | `repo forall -c <command>` across the tree (prompts for the command) |
-| `Space` then `r` | refresh only the selected project (same as `R`) |
 | `Space` then `s` | `repo sync` the selected project |
 | `Space` then `S` | `repo sync` the whole tree |
-| `Space` then `u` | last sync report — which projects moved to which commit, and what came in (also: click "last sync" in the header) |
-| `Space` then `w` | why each project counts as changed (also: click "N changed" in the header) |
 | `Space` then `d` | `repo sync -d -l` — detach the selected project to its manifest revision (local only, no fetch) |
+| `Space` then `b` | `repo start <branch>` — create a new branch on the selected project (prompts for a name) |
+| `Space` then `c` | `repo checkout <branch>` — switch to an existing local branch (pick from a list, or type one) |
 | `Space` then `x` | discard the selected project's changes so its Stat is clean: tracked changes revert to HEAD, untracked files are deleted; files hidden by your ignore rules, commits and the branch are kept (asks y/N first) |
-| `Space` then `b`/`B`/`c`/`f` | same as the direct keys |
+| `Space` then `f` | `repo forall -c <command>` across the tree (prompts for the command) |
 | `Esc` / `Space` (in the panel) | close the action panel without doing anything |
 
-Keys that ask before doing anything (`b`, `B`, `c`, `f`) work directly.
-Keys that run straight away and change the checkout (`s`, `S`, `d`, `x`) are only
-available from the `Space` action panel, so a stray keypress can't trigger
-a sync. The per-project actions (`r`, `s`, `d`, `x`, `b`/`B`, `c`) are also available
-by right-clicking a project row.
+The keys follow two rules:
+
+- **Look on the top layer, change behind `Space`.** Nothing on the top
+  layer can change a checkout; everything that can (even the ones that ask
+  first) takes `Space` and a key, so a stray keypress never syncs, switches
+  a branch or runs a command.
+- **Lowercase acts on the selected project, Shift on the whole tree**:
+  `r`/`R` refresh, `Space s`/`Space S` sync.
+
+`Space` rather than a tmux-style `ctrl+b` prefix: it's one key, and it
+doesn't collide with tmux, which you're likely running on a build machine.
+The per-project actions (refresh, sync, detach, branch, checkout, discard,
+copy) are also available by right-clicking a project row.
 
 While a `repo` command or a status refresh (at startup, `r`/`R`, and after every
 `repo` command) runs, a dialog blocks all other keys and clicks. A refresh

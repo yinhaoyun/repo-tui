@@ -228,7 +228,7 @@ def test_switch_branch_shows_picker_when_multiple_local_branches(dirty_tree, mon
             _select_project(project_list, "frameworks/base")
             await pilot.pause()
 
-            await pilot.press("B")
+            await pilot.press("space", "c")
             await pilot.pause()
 
             menu = app.screen_stack[-1]
@@ -261,7 +261,7 @@ def test_switch_branch_falls_back_to_prompt_when_no_other_branches(dirty_tree):
             _select_project(project_list, "build/make")  # detached, no local branches
             await pilot.pause()
 
-            await pilot.press("B")
+            await pilot.press("space", "c")
             await pilot.pause()
 
             assert isinstance(app.screen_stack[-1], PromptModal)
@@ -380,8 +380,10 @@ def test_immediate_actions_need_action_panel(dirty_tree, monkeypatch):
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             await app.workers.wait_for_complete()
-            await pilot.press("d")  # bare d: not bound on the top layer
+            # no key that changes a checkout is bound on the top layer
+            await pilot.press("s", "S", "d", "b", "c", "x", "f")
             await pilot.pause()
+            assert len(app.screen_stack) == 1
             await app.workers.wait_for_complete()
             assert calls == []
 
@@ -407,7 +409,7 @@ def test_app_keys_are_ignored_while_a_modal_is_open(dirty_tree):
             _select_project(app.query_one("#project-list", ProjectList), "build/make")
             await pilot.pause()
 
-            await pilot.press("B")  # build/make has no other branch -> prompt
+            await pilot.press("space", "c")  # build/make has no other branch -> prompt
             await pilot.pause()
             assert isinstance(app.screen_stack[-1], PromptModal)
 
@@ -417,7 +419,7 @@ def test_app_keys_are_ignored_while_a_modal_is_open(dirty_tree):
             app._open_context_menu(app._selected_project())
             await pilot.pause()
             await pilot.press("a")
-            await pilot.press("f")
+            await pilot.press("R")
             await pilot.pause()
             assert isinstance(app.screen_stack[-1], ContextMenu)
             assert app.show_all == show_all
@@ -494,7 +496,7 @@ def test_refresh_shows_blocking_progress_dialog(dirty_tree, monkeypatch):
 
             monkeypatch.setattr(git_backend, "collect_all", slow_collect_all)
 
-            await pilot.press("r")
+            await pilot.press("R")
             await pilot.pause(0.2)
             busy = app.screen_stack[-1]
             assert isinstance(busy, BusyModal)
@@ -623,7 +625,7 @@ def test_single_project_action_rescans_only_that_project(dirty_tree, monkeypatch
             assert scanned == [["frameworks/base"]]
 
             await pilot.press("escape")  # close the result screen
-            await pilot.press("r")  # a manual refresh still scans everything
+            await pilot.press("R")  # a manual refresh-all still scans everything
             await pilot.pause()
             await app.workers.wait_for_complete()
             assert sorted(scanned[-1]) == ["build/make", "frameworks/base"]
@@ -910,8 +912,7 @@ def test_every_key_hint_follows_the_highlight_setting(on):
     assert ("[b $text-warning]Press any key" in help_text()) is on
 
 
-@pytest.mark.parametrize("keys", [("R",), ("space", "r")])
-def test_refresh_selected_project_rescans_only_that_one(dirty_tree, monkeypatch, keys):
+def test_refresh_selected_project_rescans_only_that_one(dirty_tree, monkeypatch):
     async def scenario():
         app = RepoTuiApp(dirty_tree)
         async with app.run_test(size=(120, 40)) as pilot:
@@ -933,7 +934,7 @@ def test_refresh_selected_project_rescans_only_that_one(dirty_tree, monkeypatch,
             monkeypatch.setattr(git_backend, "collect_all", spy)
             (dirty_tree / "build/make/edited_elsewhere.c").write_text("int y;\n")
 
-            await pilot.press(*keys)
+            await pilot.press("r")
             await pilot.pause()
             await app.workers.wait_for_complete()
             await pilot.pause()
