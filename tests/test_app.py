@@ -864,6 +864,40 @@ def test_auto_refresh_rescans_in_background_without_a_dialog(dirty_tree, monkeyp
     asyncio.run(scenario())
 
 
+def test_menu_refresh_after_a_background_scan_updates_the_list(dirty_tree):
+    """A background scan that finishes while the context menu is open must
+    not leave the menu holding a Project the list no longer shows."""
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("a")
+            await pilot.pause()
+            project_list = app.query_one("#project-list", ProjectList)
+            _select_project(project_list, "build/make")
+            app._open_context_menu(project_list.project_at_cursor())
+            await pilot.pause()
+
+            await app._background_refresh()
+            (dirty_tree / "build/make/edited_elsewhere.c").write_text("int y;\n")
+
+            menu = app.screen_stack[-1]
+            assert isinstance(menu, ContextMenu)
+            menu.dismiss("refresh")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            make = next(p for p in app.projects if p.path == "build/make")
+            assert make.untracked_count == 1 and make.is_changed
+            _select_project(project_list, "build/make")
+            assert project_list.project_at_cursor().stat_summary == "?1"
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("on", [True, False])
 def test_every_key_hint_follows_the_highlight_setting(on):
     from repo_tui import hints

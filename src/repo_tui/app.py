@@ -162,7 +162,7 @@ class RepoTuiApp(App):
 
     async def _background_refresh(self) -> None:
         """Auto-refresh: rescan a copy of the projects with no dialog, then
-        swap it in -- unless a foreground scan started meanwhile."""
+        copy the results in -- unless a foreground scan started meanwhile."""
         generation = self._scan_generation
         snapshot = copy.deepcopy(self.projects)
         header = self.query_one("#header", HeaderBar)
@@ -174,7 +174,11 @@ class RepoTuiApp(App):
         finally:
             header.set_syncing(False)
         if generation == self._scan_generation:
-            self.projects = snapshot
+            # Copy the results onto the live objects rather than swapping the
+            # list: an open menu or a running command may hold a Project, and
+            # a later refresh of it must update what the list shows.
+            for live, fresh in zip(self.projects, snapshot):
+                vars(live).update(vars(fresh))
             self._apply_filters()
 
     def _auto_refresh_tick(self) -> None:
