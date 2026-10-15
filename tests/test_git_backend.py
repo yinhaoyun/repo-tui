@@ -153,3 +153,60 @@ def test_head_changes_counts_new_and_dropped_commits(tmp_path):
     assert "No longer on HEAD (2)" in git_backend.describe_head_change(project, back)
 
     assert git_backend.head_changes([project], base, base) == []
+
+
+def _git(cwd, *args):
+    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, env=env)
+
+
+def _file_repo(tmp_path):
+    from repo_tui.models import Project
+
+    root = tmp_path / "p"
+    root.mkdir()
+    _git(root, "init", "-q")
+    (root / "a.txt").write_text("one\n")
+    _git(root, "add", "a.txt")
+    _git(root, "commit", "-q", "-m", "first")
+    (root / "a.txt").write_text("one\ntwo\n")
+    return Project(path="p", name="p", abs_path=root)
+
+
+def test_file_diff_log_stage_unstage(tmp_path):
+    from repo_tui.models import FileStatus
+
+    project = _file_repo(tmp_path)
+    tracked = FileStatus("a.txt", " ", "M")
+    assert "+two" in git_backend.read_file_diff(project, tracked)
+
+    assert git_backend.stage_file(project, tracked)[0] == 0
+    staged = FileStatus("a.txt", "M", " ")
+    # a staged-only change still shows in the diff view
+    assert "+two" in git_backend.read_file_diff(project, staged)
+    assert git_backend.unstage_file(project, staged)[0] == 0
+    out = subprocess.run(["git", "status", "--porcelain"], cwd=project.abs_path,
+                         capture_output=True, text=True).stdout
+    assert out == " M a.txt\n"
+
+    (project.abs_path / "new.txt").write_text("hello\n")
+    untracked = FileStatus("new.txt", "?", "?")
+    assert "+hello" in git_backend.read_file_diff(project, untracked)
+
+    log = git_backend.file_log(project, "a.txt")
+    assert "first" in log and len(log.splitlines()) == 1
+    assert "one" in git_backend.file_blame(project, "a.txt")
+
+    rc, _ = git_backend.discard_files(project, [tracked, untracked])
+    assert rc == 0
+    assert (project.abs_path / "a.txt").read_text() == "one\n"
+    assert not (project.abs_path / "new.txt").exists()
+
+
+def test_failed_file_op_returns_gits_message(tmp_path):
+    from repo_tui.models import FileStatus
+
+    project = _file_repo(tmp_path)
+    rc, lines = git_backend.stage_file(project, FileStatus("missing.txt", "?", "?"))
+    assert rc != 0 and any("missing.txt" in line for line in lines)

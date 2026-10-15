@@ -1,4 +1,5 @@
-"""A modal screen showing the full `git diff` output for one file."""
+"""A modal screen showing the full `git diff` output for one file (also used
+for a file's history and blame)."""
 
 from __future__ import annotations
 
@@ -12,9 +13,15 @@ from ..hints import close_tip
 class DiffScreen(ModalScreen[None]):
     BINDINGS = [("escape", "dismiss_screen", "Close"), ("q", "dismiss_screen", "Close")]
 
-    def __init__(self, title: str, diff_text: str) -> None:
+    def __init__(
+        self,
+        title: str,
+        diff_text: str,
+        empty: str = "(no textual diff — binary file or no changes)",
+    ) -> None:
         self._title = title
         self._diff_text = diff_text
+        self._empty = empty
         super().__init__()
 
     def compose(self):
@@ -25,7 +32,7 @@ class DiffScreen(ModalScreen[None]):
 
     def on_mount(self) -> None:
         log = self.query_one("#diff-log", RichLog)
-        text = self._diff_text or "(no textual diff — binary file or no changes)"
+        text = self._diff_text or self._empty
         log.write(text)
 
     def action_dismiss_screen(self) -> None:

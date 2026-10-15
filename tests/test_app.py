@@ -1325,3 +1325,171 @@ def test_update_checks_repeat_on_an_interval_and_only_pop_up_on_news(dirty_tree,
             assert app._update_timer is None
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "check, title, text",
+    [
+        ({"head": "abc1234 2026-10-15"}, "repo-tui 0.1.0 (abc1234 2026-10-15)", "up to date"),
+        ({"behind": 2, "commits": ["d1 new", "d2 fix"]}, "2 new commit(s)", "Press [b]U[/]"),
+        ({"behind": 1, "commits": ["d1"], "dirty": True}, "1 new commit(s)", "Can't update yet"),
+        ({"error": "git fetch failed: offline"}, "couldn't check", "offline"),
+    ],
+)
+def test_v_checks_now_and_always_says_what_it_found(dirty_tree, monkeypatch, check, title, text):
+    from repo_tui import self_update
+
+    result = self_update.UpdateCheck(**check)
+    calls = []
+    monkeypatch.setattr(
+        self_update, "check_for_update", lambda **kw: calls.append(1) or result
+    )
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        notes = []
+        monkeypatch.setattr(app, "notify", lambda message, **kw: notes.append((message, kw)))
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            notes.clear()
+            before = len(calls)
+            await pilot.press("v")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert len(calls) == before + 1  # a fresh check, not a cached result
+            assert len(app.screen_stack) == 1
+            message, kw = notes[-1]
+            assert title in kw["title"] and text in message
+
+    asyncio.run(scenario())
+
+
+async def _focus_file(pilot, app, path):
+    await pilot.press("tab")
+    await pilot.pause()
+    file_table = app.query_one("#file-table", FileTable)
+    assert app.focused is file_table
+    for i in range(file_table.row_count):
+        file_table.move_cursor(row=i)
+        if file_table.file_at_cursor().path == path:
+            break
+    await pilot.pause()
+    return file_table
+
+
+def _porcelain(path):
+    return subprocess.run(
+        ["git", "status", "--porcelain", "--", "README.md"],
+        cwd=path, capture_output=True, text=True,
+    ).stdout
+
+
+def test_file_list_keys_stage_unstage_revert_history(dirty_tree, monkeypatch):
+    base = dirty_tree / "frameworks/base"
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        notes = []
+        monkeypatch.setattr(app, "notify", lambda message, **kw: notes.append((message, kw)))
+        async with app.run_test(size=(160, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            file_table = await _focus_file(pilot, app, "README.md")
+            assert "file:" in str(app.query_one("#keybar").render())
+
+            # look: history, in a viewer
+            await pilot.press("l")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert isinstance(app.screen_stack[-1], DiffScreen)
+            await pilot.press("escape")
+            await pilot.pause()
+
+            # change: behind Space, in the "This file" column
+            await pilot.press("space")
+            await pilot.pause()
+            panel = app.screen_stack[-1]
+            assert "file: README.md" in panel.query_one("#action-box").border_title
+            assert "This file" in str(panel.query_one("#action-keys").render())
+            await pilot.press("a")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert _porcelain(base) == "M  README.md\n"
+            assert file_table.file_at_cursor().path == "README.md"  # cursor stayed
+            assert notes[-1][0] == "Staged README.md"
+
+            await pilot.press("space", "u")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert _porcelain(base) == " M README.md\n"
+
+            await pilot.press("space", "r")
+            await pilot.pause()
+            assert isinstance(app.screen_stack[-1], ConfirmModal)
+            await pilot.press("y")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert _porcelain(base) == ""
+            assert (base / "README.md").read_text() == "hello\n"
+
+    asyncio.run(scenario())
+
+
+def test_file_actions_only_from_the_file_list(dirty_tree):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(160, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("space")  # project list has focus
+            await pilot.pause()
+            panel = app.screen_stack[-1]
+            assert "This file" not in str(panel.query_one("#action-keys").render())
+            await pilot.press("a")  # not an action key here
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert "M  README.md" not in _porcelain(dirty_tree / "frameworks/base")
+
+    asyncio.run(scenario())
+
+
+def test_file_list_edit_and_copy_path(dirty_tree, monkeypatch, tmp_path):
+    import contextlib
+
+    editor = tmp_path / "fake-editor"
+    editor.write_text('#!/bin/sh\necho edited >> "$1"\n')
+    editor.chmod(0o755)
+    monkeypatch.setenv("VISUAL", str(editor))
+    base = dirty_tree / "frameworks/base"
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        copied, notes = [], []
+        monkeypatch.setattr(app, "suspend", contextlib.nullcontext)
+        monkeypatch.setattr(app, "copy_to_clipboard", copied.append)
+        monkeypatch.setattr(app, "notify", lambda message, **kw: notes.append((message, kw)))
+        async with app.run_test(size=(160, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await _focus_file(pilot, app, "README.md")
+            await pilot.press("y")
+            assert copied == [str(base / "README.md")]
+
+            await pilot.press("e")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert (base / "README.md").read_text().endswith("edited\n")
+
+            monkeypatch.setenv("VISUAL", "no-such-editor-xyz")
+            await pilot.press("e")
+            await pilot.pause()
+            assert notes[-1][1]["severity"] == "error"
+            assert "not found" in notes[-1][0]
+
+    asyncio.run(scenario())

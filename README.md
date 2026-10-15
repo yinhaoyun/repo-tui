@@ -102,7 +102,9 @@ repo-tui checks GitHub for a newer version in the background: when it
 starts, then every 6 hours while it runs (change the interval, or turn it
 off, under `o` → Behaviour). When there is one, the header shows
 **⬆ repo-tui update (N)** and a toast says so; a later check only pops up
-again if even newer commits have landed. Press `U` (or
+again if even newer commits have landed. To check right now, press `v`:
+it shows the version you're running and either "up to date", the new
+commits (and whether anything blocks updating), or why it couldn't check. Press `U` (or
 click that header item) to update from inside the app: it fetches again,
 shows the new commits and asks y/N, pulls and reinstalls behind a progress
 dialog, shows the output, then offers to restart into the new version. If
@@ -220,6 +222,7 @@ right after `repo sync` — is *not* treated as changed on its own.
 | `u` | last sync report — which projects moved to which commit, and what came in (also: click "last sync" in the header) |
 | `y` | copy (yank) the selected project's absolute path |
 | `o` | settings — theme, highlighted hints, sync jobs, sort, auto-refresh, … (see below) |
+| `v` | version — show the running repo-tui (version, commit) and check GitHub for a newer one right now; always says what it found |
 | `U` | update repo-tui itself from GitHub — asks first, then offers to restart (see [Upgrading](#upgrading); also: click "⬆ repo-tui update" in the header) |
 | `q` | quit |
 | `Space` then `s` | `repo sync` the selected project |
@@ -231,6 +234,27 @@ right after `repo sync` — is *not* treated as changed on its own.
 | `Space` then `f` | `repo forall -c <command>` across the tree (prompts for the command) |
 | `Space` then `M` | switch the whole tree to another manifest branch and/or manifest file: `repo init -b <branch> -m <file>`, then `repo sync` everything (see below) |
 | `Esc` / `Space` (in the panel) | close the action panel without doing anything |
+
+### File list keys
+
+While the file list (right pane) has focus — `tab` to it — these act on the
+file at the cursor, and the bottom bar shows them first:
+
+| Key | Action |
+|---|---|
+| `enter` / click | diff since HEAD: staged and unstaged changes together; an untracked file shows its whole content |
+| `l` | history — the commits that touched the file (`git log --follow`) |
+| `b` | blame |
+| `e` | open it in `$VISUAL` / `$EDITOR` (`vi` if neither is set); repo-tui steps aside while the editor runs and rescans the project after |
+| `y` | copy the file's absolute path (instead of the project's) |
+| `Space` then `a` | stage the file (`git add -A`, so deletions and both sides of a rename too) |
+| `Space` then `u` | unstage it (`git restore --staged`), keeping your edits |
+| `Space` then `r` | revert it: tracked changes back to HEAD (both staged and unstaged), an untracked file deleted — asks y/N first |
+
+The `Space` panel only shows the "This file" column when you open it from
+the file list. After each one the project is rescanned and the cursor stays
+on the same file, so you can work down the list; if git refuses, its error
+is shown.
 
 The keys follow two rules:
 

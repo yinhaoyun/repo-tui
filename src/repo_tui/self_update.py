@@ -88,6 +88,7 @@ class UpdateCheck:
     commits: list[str] = field(default_factory=list)  # the new ones, oneline
     dirty: bool = False
     error: str = ""  # why it couldn't check
+    head: str = ""  # the running checkout's commit: "<short sha> <date>"
     not_a_checkout: bool = False  # not an editable git install: can't self-update
 
     @property
@@ -119,6 +120,7 @@ def check_for_update(fetch: bool = True) -> UpdateCheck:
     except SelfUpdateError as exc:
         return UpdateCheck(error=str(exc), not_a_checkout=True)
     check = UpdateCheck(root=root)
+    check.head = _run(root, "git", "log", "-1", "--format=%h %cs", batch=True).stdout.strip()
     if fetch:
         result = _run(root, "git", "fetch", "--quiet", batch=True)
         if result.returncode != 0:

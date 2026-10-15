@@ -13,7 +13,7 @@ HELP_SECTIONS = [
     ("Navigation", [
         ("↑/↓, j/k", "move selection in the focused pane"),
         ("tab / shift+tab", "switch focus between left and right panes"),
-        ("enter", "open diff for the selected file (right pane)"),
+        ("enter", "open diff for the selected file (right pane; more under File list)"),
         ("mouse", "left-click a row to select it, scroll wheel to scroll"),
         ("right-click", "open the project context menu (left pane)"),
         ("drag │", "drag the divider between the panes to resize them"),
@@ -28,9 +28,18 @@ HELP_SECTIONS = [
         ("a", 'toggle "show all" vs "hide unchanged" (default: hidden)'),
         ("i", "toggle showing ignored files in the file list"),
         ("o", "settings: theme, sync jobs, sort, auto-refresh, …"),
+        ("v", "version: check GitHub for a newer repo-tui now (and say what's new)"),
         ("U", "update repo-tui itself from GitHub (asks first; never touches the tree)"),
         ("?", "toggle this help"),
         ("q, ctrl+c", "quit"),
+    ]),
+    ("File list — while it has focus (tab to it), on the file at the cursor", [
+        ("enter / click", "diff since HEAD (staged + unstaged; untracked: whole file)"),
+        ("l", "history: commits that touched the file (follows renames)"),
+        ("b", "blame"),
+        ("e", "open in $VISUAL / $EDITOR (vi if unset), then rescan"),
+        ("y", "copy the file's absolute path"),
+        ("space a/u/r", "stage / unstage / revert the file (revert asks y/N)"),
     ]),
     ("Change — press space, then a key (stays open until you choose)", [
         ("space s", "repo sync — selected project only"),

@@ -238,13 +238,61 @@ def describe_head_change(project: Project, change: HeadChange) -> str:
     return "\n".join(lines)
 
 
-def read_file_diff(project: Project, rel_path: str, staged: bool = False) -> str:
-    """Return `git diff` text for a single file, for the detail/diff view."""
-    args = ["diff"]
-    if staged:
-        args.append("--cached")
-    args.extend(["--", rel_path])
-    return _run_git(project.abs_path, args)
+def read_file_diff(project: Project, file: FileStatus) -> str:
+    """`git diff` text for one file, for the diff view: everything since
+    HEAD, staged or not (a staged-only change would show nothing in a
+    plain `git diff`); an untracked file's whole content as added lines."""
+    if file.is_untracked:
+        return _run_git(project.abs_path, ["diff", "--no-index", "--", "/dev/null", file.path])
+    paths = [file.orig_path, file.path] if file.orig_path else [file.path]
+    text = _run_git(project.abs_path, ["diff", "-M", "HEAD", "--", *paths])
+    if not text:  # no HEAD yet (fresh repo): what's staged
+        text = _run_git(project.abs_path, ["diff", "--cached", "--", *paths])
+    return text
+
+
+def file_log(project: Project, rel_path: str, limit: int = 200) -> str:
+    """The commits that touched one file (following renames), newest first."""
+    return _run_git(
+        project.abs_path,
+        [
+            "log", "--follow", f"-n{limit}", "--date=short",
+            "--format=%h  %ad  %<(16,trunc)%an  %s", "--", rel_path,
+        ],
+    )
+
+
+def file_blame(project: Project, rel_path: str) -> str:
+    """`git blame` of the file as committed plus any uncommitted edits."""
+    return _run_git(project.abs_path, ["blame", "--date=short", "--", rel_path])
+
+
+def _git_lines(project: Project, args: list[str]) -> tuple[int, list[str]]:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=project.abs_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=_GIT_TIMEOUT,
+    )
+    return result.returncode, [
+        line for line in (result.stdout + result.stderr).splitlines() if line
+    ]
+
+
+def _paths_of(file: FileStatus) -> list[str]:
+    return [file.path, file.orig_path] if file.orig_path else [file.path]
+
+
+def stage_file(project: Project, file: FileStatus) -> tuple[int, list[str]]:
+    """`git add -A` one file: its edits, its deletion, or both sides of a rename."""
+    return _git_lines(project, ["add", "-A", "--", *_paths_of(file)])
+
+
+def unstage_file(project: Project, file: FileStatus) -> tuple[int, list[str]]:
+    """Take one file out of the index, keeping the working-tree edits."""
+    return _git_lines(project, ["restore", "--staged", "--", *_paths_of(file)])
 
 
 _PATHS_PER_CALL = 200  # keep argv well under the OS limit on huge changesets
@@ -258,7 +306,12 @@ def discard_changes(project: Project) -> tuple[int, list[str]]:
 
     Returns (exit code, output lines); the exit code is the first non-zero
     one from git, else 0."""
-    files = [f for f in project.files if not f.ignored]
+    return discard_files(project, [f for f in project.files if not f.ignored])
+
+
+def discard_files(project: Project, files: list[FileStatus]) -> tuple[int, list[str]]:
+    """Restore these tracked files to HEAD and delete these untracked ones;
+    see discard_changes."""
     tracked: list[str] = []
     for f in files:
         if not f.is_untracked:

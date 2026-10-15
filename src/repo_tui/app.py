@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import os
+import shlex
 import shutil
+import subprocess
 import time
 from pathlib import Path
 
@@ -14,6 +17,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import DataTable, Input
 
+from . import __version__
 from . import config as config_mod
 from . import git_backend
 from . import hints
@@ -71,6 +75,7 @@ class RepoTuiApp(App):
         Binding("o", "settings", "Settings"),
         # Updates repo-tui itself (asks first), never the tree.
         Binding("U", "update_app", "Update repo-tui"),
+        Binding("v", "check_update", "Version / check for update"),
         Binding("q", "quit", "Quit"),
         # The top layer only looks: anything that changes a checkout (sync,
         # detach, branch, checkout, discard, forall) is behind Space.
@@ -239,7 +244,7 @@ class RepoTuiApp(App):
         file = file_table.file_at_cursor()
         if project is None or file is None:
             return
-        self.run_worker(self._show_diff(project, file.path), exclusive=True, group="diff")
+        self.run_worker(self._show_diff(project, file), exclusive=True, group="diff")
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "filter-bar":
@@ -318,7 +323,7 @@ class RepoTuiApp(App):
         setattr(self.config, name, value)
         if name == "highlight_hints":
             hints.set_highlight(value)
-            self.query_one("#keybar", KeyBar).show_top_level()
+            self.query_one("#keybar", KeyBar).refresh_hints()
             self._sync_detail_pane()
         elif name == "sort":
             self._apply_filters()
@@ -382,6 +387,56 @@ class RepoTuiApp(App):
                 timeout=10,
             )
         self._update_behind_notified = check.behind
+
+    def action_check_update(self) -> None:
+        self.run_worker(self._check_update_now(), exclusive=True, group="update-check")
+
+    async def _check_update_now(self) -> None:
+        """`v`: check GitHub right now and always say what was found --
+        unlike the background check, "up to date" and repeated errors too."""
+        busy = BusyModal("Checking GitHub for a newer repo-tui", show_log=False)
+        await self.push_screen(busy)
+        busy.set_phase("Fetching…")
+        try:
+            check = await asyncio.to_thread(self_update.check_for_update)
+        finally:
+            await busy.dismiss()
+        version = f"repo-tui {__version__}" + (
+            f" ({check.head})" if check.head else ""
+        )
+        if check.error:
+            self._update_error_notified = check.error
+            self.notify(
+                escape(check.error),
+                title=f"{escape(version)} — couldn't check for updates",
+                severity="error",
+                timeout=15,
+            )
+            return
+        self._update_error_notified = ""
+        self.query_one("#header", HeaderBar).set_update_available(check.behind)
+        self._update_behind_notified = check.behind
+        if not check.available:
+            local = f"\n{check.ahead} local commit(s) not on GitHub." if check.ahead else ""
+            self.notify(
+                f"You're up to date.{local}", title=escape(version), timeout=6
+            )
+            return
+        shown = "\n".join(escape(line) for line in check.commits[:5])
+        if check.behind > 5:
+            shown += f"\n…and {check.behind - 5} more"
+        blocker = check.blocker
+        self.notify(
+            shown
+            + (
+                f"\n\n[b]Can't update yet:[/] {escape(blocker)}"
+                if blocker
+                else "\n\nPress [b]U[/] to update."
+            ),
+            title=f"{escape(version)} — {check.behind} new commit(s) on GitHub",
+            severity="warning" if blocker else "information",
+            timeout=15,
+        )
 
     def action_update_app(self) -> None:
         self.run_worker(self._prepare_update(), exclusive=True, group="update")
@@ -478,9 +533,180 @@ class RepoTuiApp(App):
             self.restart_requested = True
             self.exit()
 
-    async def _show_diff(self, project: Project, rel_path: str) -> None:
-        text = await asyncio.to_thread(git_backend.read_file_diff, project, rel_path)
-        self.push_screen(DiffScreen(f"{project.path}/{rel_path}", text))
+    async def _show_diff(self, project: Project, file) -> None:
+        text = await asyncio.to_thread(git_backend.read_file_diff, project, file)
+        self.push_screen(DiffScreen(f"{project.path}/{file.path}", text))
+
+    # -- file actions: the file at the file list's cursor ----------------
+    #    (l/b/e/y while the list has focus; a/u/r in the Space panel)
+
+    def _selected_file(self):
+        """(project, file) at the file list's cursor, or None (and says so)."""
+        project = self._selected_project()
+        file = self.query_one("#file-table", FileTable).file_at_cursor()
+        if project is None or file is None:
+            self.notify("No file selected.", severity="warning", timeout=3)
+            return None
+        return project, file
+
+    def action_file_log(self) -> None:
+        selected = self._selected_file()
+        if selected is None:
+            return
+        project, file = selected
+
+        async def show() -> None:
+            text = await asyncio.to_thread(git_backend.file_log, project, file.path)
+            self.push_screen(
+                DiffScreen(
+                    f"history: {project.path}/{file.path}",
+                    text,
+                    empty="(no commits touch this file yet)",
+                )
+            )
+
+        self.run_worker(show(), exclusive=True, group="diff")
+
+    def action_file_blame(self) -> None:
+        selected = self._selected_file()
+        if selected is None:
+            return
+        project, file = selected
+        if file.is_untracked:
+            self.notify(f"{escape(file.path)} is untracked: nothing to blame yet.", timeout=4)
+            return
+
+        async def show() -> None:
+            text = await asyncio.to_thread(git_backend.file_blame, project, file.path)
+            self.push_screen(
+                DiffScreen(
+                    f"blame: {project.path}/{file.path}",
+                    text,
+                    empty="(no blame — binary, deleted, or not committed yet)",
+                )
+            )
+
+        self.run_worker(show(), exclusive=True, group="diff")
+
+    def action_copy_file_path(self) -> None:
+        selected = self._selected_file()
+        if selected is not None:
+            project, file = selected
+            self._copy_text(str(project.abs_path / file.path), "File path")
+
+    def action_edit_file(self) -> None:
+        """Open the file in $VISUAL / $EDITOR (vi if neither is set), with
+        the TUI suspended, then rescan the project."""
+        selected = self._selected_file()
+        if selected is None:
+            return
+        project, file = selected
+        path = project.abs_path / file.path
+        if not path.is_file():
+            self.notify(
+                f"{escape(file.path)} doesn't exist in the working tree (deleted?).",
+                severity="warning",
+                timeout=5,
+            )
+            return
+        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi"
+        try:
+            argv = shlex.split(editor)
+        except ValueError as exc:
+            self.notify(f"Can't parse $EDITOR {escape(editor)!r}: {escape(str(exc))}",
+                        severity="error", timeout=10)
+            return
+        if not argv or shutil.which(argv[0]) is None:
+            self.notify(
+                f"Editor {escape(editor)!r} not found. Set $VISUAL or $EDITOR.",
+                severity="error",
+                timeout=10,
+            )
+            return
+        try:
+            with self.suspend():
+                returncode = subprocess.call([*argv, str(path)], cwd=project.abs_path)
+        except Exception as exc:  # noqa: BLE001 - e.g. suspend unsupported here
+            self.notify(f"Couldn't run the editor: {escape(str(exc))}", severity="error",
+                        timeout=10)
+            return
+        if returncode:
+            self.notify(f"{escape(argv[0])} exited with {returncode}.", severity="warning",
+                        timeout=5)
+        self._refresh_project(project)
+
+    async def _run_file_op(self, project: Project, done: str, func, *args) -> None:
+        """Run a quick git file operation, rescan the project, and say how
+        it went: a toast on success, git's own message on failure."""
+        try:
+            returncode, lines = await asyncio.to_thread(func, project, *args)
+        except Exception as exc:  # noqa: BLE001 - e.g. git timed out
+            returncode, lines = 1, [str(exc)]
+        await self._refresh(only=[project])
+        if returncode:
+            problems = [line for line in lines if line.startswith(("error", "fatal"))]
+            self.notify(
+                escape("\n".join(problems or lines[-3:]) or f"git exited with {returncode}"),
+                title=f"Failed: {done}",
+                severity="error",
+                timeout=12,
+            )
+        else:
+            self.notify(escape(done), timeout=3)
+
+    def action_stage_file(self) -> None:
+        selected = self._selected_file()
+        if selected is None:
+            return
+        project, file = selected
+        self.run_worker(
+            self._run_file_op(project, f"Staged {file.path}", git_backend.stage_file, file),
+            exclusive=True,
+            group="file",
+        )
+
+    def action_unstage_file(self) -> None:
+        selected = self._selected_file()
+        if selected is None:
+            return
+        project, file = selected
+        if not file.is_staged:
+            self.notify(f"{escape(file.path)} has nothing staged.", timeout=3)
+            return
+        self.run_worker(
+            self._run_file_op(project, f"Unstaged {file.path}", git_backend.unstage_file, file),
+            exclusive=True,
+            group="file",
+        )
+
+    def action_revert_file(self) -> None:
+        selected = self._selected_file()
+        if selected is None:
+            return
+        project, file = selected
+        if file.is_untracked:
+            what = "[b]This untracked file is deleted.[/]"
+        elif file.orig_path:
+            what = f"The rename from {escape(file.orig_path)} is undone, back to HEAD."
+        else:
+            what = "Its staged and unstaged changes are reverted to HEAD."
+        body = (
+            f"  {escape(file.code)}  {escape(file.path)}\n\n{what}\n"
+            "[b red]This cannot be undone.[/]"
+            + ("\n[dim]It's matched by your ignore rules.[/]" if file.ignored else "")
+        )
+
+        def handle(confirmed: bool | None) -> None:
+            if confirmed:
+                self.run_worker(
+                    self._run_file_op(
+                        project, f"Reverted {file.path}", git_backend.discard_files, [file]
+                    ),
+                    exclusive=True,
+                    group="file",
+                )
+
+        self.push_screen(ConfirmModal(f"Revert {escape(file.path)} in {escape(project.path)}?", body), handle)
 
     # -- per-project actions: shared by the action keys and the
     #    right-click context menu ----------------------------------------
@@ -804,12 +1030,14 @@ class RepoTuiApp(App):
         )
 
     def _copy_project_path(self, project: Project) -> None:
-        text = str(project.abs_path)
+        self._copy_text(str(project.abs_path), "Project path")
+
+    def _copy_text(self, text: str, what: str) -> None:
         try:
             self.copy_to_clipboard(text)
-            self.notify(f"Copied: {text}")
+            self.notify(f"Copied: {escape(text)}")
         except Exception:
-            self.notify(text, title="Project path")
+            self.notify(escape(text), title=what)
 
     def _open_context_menu(self, project: Project) -> None:
         options = [
@@ -853,7 +1081,14 @@ class RepoTuiApp(App):
             if action:
                 getattr(self, f"action_{action}")()
 
-        self.push_screen(ActionPanel(project.path if project else None), handle)
+        # Focus-based: from the file list, the panel also offers the file's actions.
+        file = None
+        if isinstance(self.focused, FileTable):
+            file = self.focused.file_at_cursor()
+        self.push_screen(
+            ActionPanel(project.path if project else None, file.path if file else None),
+            handle,
+        )
 
     def action_sync_selected(self) -> None:
         project = self._selected_project()
