@@ -66,6 +66,10 @@ max_workers = 16
 # result_screen = "problems"
 # Rescan git status in the background every N minutes (0 = off, default).
 # auto_refresh_minutes = 5
+# Check GitHub for a newer repo-tui at startup and every N hours while it
+# runs (1, 3, 6 (default), 12 or 24); check_updates = false turns it off.
+# check_updates = true
+# update_check_hours = 6
 
 # Your own themes: one [themes.<name>] table each, then pick it with
 # `theme = "<name>"` above or in the settings screen (o -> Display -> Theme).

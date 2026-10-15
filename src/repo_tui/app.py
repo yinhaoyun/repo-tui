@@ -88,6 +88,11 @@ class RepoTuiApp(App):
         self.show_ignored = False
         self.search = ""
         self._auto_timer = None
+        self._update_timer = None
+        # What the update checks last told the user, so a periodic check
+        # only pops up when something changed.
+        self._update_behind_notified = 0
+        self._update_error_notified = ""
         self.sync_report: SyncReport | None = None
         # Bumped by every foreground status scan, so a background scan that
         # was overtaken by one throws its (now older) results away.
@@ -123,8 +128,7 @@ class RepoTuiApp(App):
             )
         self._restart_auto_refresh()
         self.run_worker(self._refresh(), exclusive=True, group="refresh")
-        if self.config.check_updates:
-            self.run_worker(self._check_for_update(), group="update-check")
+        self._restart_update_checks(check_now=True)
 
     # -- data plumbing ----------------------------------------------------
 
@@ -201,7 +205,8 @@ class RepoTuiApp(App):
 
     def _auto_refresh_tick(self) -> None:
         # Never under a dialog or while a command/scan is running.
-        if len(self.screen_stack) > 1 or any(w.is_running for w in self.workers):
+        busy = any(w.is_running and w.group != "update-check" for w in self.workers)
+        if len(self.screen_stack) > 1 or busy:
             return
         self.run_worker(self._background_refresh(), exclusive=True, group="auto-refresh")
 
@@ -319,6 +324,8 @@ class RepoTuiApp(App):
             self._apply_filters()
         elif name == "auto_refresh_minutes":
             self._restart_auto_refresh()
+        elif name in ("check_updates", "update_check_hours"):
+            self._restart_update_checks(check_now=name == "check_updates" and value)
         try:
             path = config_mod.save_setting(name, value)
         except OSError as exc:
@@ -327,28 +334,54 @@ class RepoTuiApp(App):
 
     # -- updating repo-tui itself ----------------------------------------
 
+    def _restart_update_checks(self, check_now: bool = False) -> None:
+        """(Re)start the periodic update check from the settings; with
+        `check_now`, also check right away (startup, or just switched on)."""
+        if self._update_timer is not None:
+            self._update_timer.stop()
+            self._update_timer = None
+        if not self.config.check_updates:
+            return
+        self._update_timer = self.set_interval(
+            self.config.update_check_hours * 3600, self._update_check_tick
+        )
+        if check_now:
+            self._update_check_tick()
+
+    def _update_check_tick(self) -> None:
+        # Not while an update itself (or another check) is running.
+        if any(w.is_running and w.group in ("update", "update-check") for w in self.workers):
+            return
+        self.run_worker(self._check_for_update(), group="update-check")
+
     async def _check_for_update(self) -> None:
-        """Startup check, in the background: say so if GitHub has a newer
-        repo-tui; say why if the check failed (except for installs that
-        can't self-update anyway, which would only nag)."""
+        """Background check: say so if GitHub has a newer repo-tui; say why
+        if the check failed (except for installs that can't self-update
+        anyway, which would only nag). The header always shows the latest
+        result; a popup only when it's news: more new commits than last
+        told, or a different error."""
         check = await asyncio.to_thread(self_update.check_for_update)
         if check.not_a_checkout:
             return
         if check.error:
-            self.notify(
-                escape(check.error),
-                title="Couldn't check for repo-tui updates",
-                severity="warning",
-                timeout=8,
-            )
+            if check.error != self._update_error_notified:
+                self.notify(
+                    escape(check.error),
+                    title="Couldn't check for repo-tui updates",
+                    severity="warning",
+                    timeout=8,
+                )
+            self._update_error_notified = check.error
             return
+        self._update_error_notified = ""
         self.query_one("#header", HeaderBar).set_update_available(check.behind)
-        if check.available:
+        if check.behind > self._update_behind_notified:
             self.notify(
                 f"{check.behind} new commit(s) on GitHub. Press [b]U[/] to update.",
                 title="repo-tui update available",
                 timeout=10,
             )
+        self._update_behind_notified = check.behind
 
     def action_update_app(self) -> None:
         self.run_worker(self._prepare_update(), exclusive=True, group="update")
@@ -417,6 +450,7 @@ class RepoTuiApp(App):
         updated = returncode == 0 and not any("already up to date" in l for l in lines)
         if updated:
             self.query_one("#header", HeaderBar).set_update_available(0)
+            self._update_behind_notified = 0
         result = ResultScreen("update repo-tui", lines, returncode)
 
         def offer_restart(_=None) -> None:

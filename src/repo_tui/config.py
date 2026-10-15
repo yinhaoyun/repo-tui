@@ -47,6 +47,9 @@ RESULT_SCREEN_CHOICES = (
     ("always", "always"),
     ("problems", "only on errors/warnings"),
 )
+UPDATE_CHECK_CHOICES = tuple(
+    (hours, "every hour" if hours == 1 else f"every {hours} h") for hours in (1, 3, 6, 12, 24)
+)
 AUTO_REFRESH_CHOICES = tuple(
     (minutes, f"every {minutes} min" if minutes else "off")
     for minutes in (0, 1, 2, 5, 10, 15, 30, 60)
@@ -65,6 +68,7 @@ class Config:
     result_screen: str = "always"
     auto_refresh_minutes: int = 0
     check_updates: bool = True
+    update_check_hours: int = 6
     ignore: IgnoreRules = field(default_factory=IgnoreRules)
     custom_themes: dict = field(default_factory=dict)  # raw [themes.<name>] tables
     source: Path | None = None
@@ -151,9 +155,16 @@ SETTINGS = (
     ),
     Setting(
         "check_updates", "Behaviour", "Check for repo-tui updates",
-        "At startup, check GitHub in the background for a newer repo-tui and "
-        "say so in the header. U updates it either way.",
+        "Check GitHub in the background for a newer repo-tui, at startup and "
+        "then every so often (below), and say so in the header. U updates it "
+        "either way.",
         "bool", "behaviour", "check_updates",
+    ),
+    Setting(
+        "update_check_hours", "Behaviour", "Update check interval",
+        "How often to re-check GitHub for a newer repo-tui while it runs. A "
+        "popup only appears when there's something newer than last time.",
+        "choice", "behaviour", "update_check_hours", choices=UPDATE_CHECK_CHOICES,
     ),
 )
 SETTINGS_BY_NAME = {setting.name: setting for setting in SETTINGS}

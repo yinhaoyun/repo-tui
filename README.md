@@ -98,15 +98,17 @@ repo-tui /path/to/tree
 
 ## Upgrading
 
-repo-tui checks GitHub for a newer version when it starts (in the
-background; turn it off under `o` → Behaviour). When there is one, the
-header shows **⬆ repo-tui update (N)** and a toast says so. Press `U` (or
+repo-tui checks GitHub for a newer version in the background: when it
+starts, then every 6 hours while it runs (change the interval, or turn it
+off, under `o` → Behaviour). When there is one, the header shows
+**⬆ repo-tui update (N)** and a toast says so; a later check only pops up
+again if even newer commits have landed. Press `U` (or
 click that header item) to update from inside the app: it fetches again,
 shows the new commits and asks y/N, pulls and reinstalls behind a progress
 dialog, shows the output, then offers to restart into the new version. If
 it can't go ahead — local changes or local commits in the clone, no network,
 not a git install — it says why instead (the same cases as below). A
-failed startup check is reported as a warning toast; an install that can't
+failed check is reported as a warning toast (once, until the error changes); an install that can't
 self-update at all (not a git clone) isn't nagged about at startup.
 
 From the shell:
@@ -301,7 +303,8 @@ close with `esc`. Changes apply immediately and are saved to
 | Behaviour | Status scan workers — parallel `git status` during a refresh | 1–128 (default 16) | `[performance] max_workers` |
 | Behaviour | Sort project list | changed first (default), most changes first, by branch, by path | `[display] sort` (`changed`/`changes`/`branch`/`path`) |
 | Behaviour | Show command output — after a repo command, always open its output, or only when it failed or printed errors/warnings (a toast otherwise) | always (default) / only on errors/warnings | `[behaviour] result_screen` (`always`/`problems`) |
-| Behaviour | Check for repo-tui updates — at startup, check GitHub in the background and show "⬆ repo-tui update (N)" in the header | on (default) / off | `[behaviour] check_updates` |
+| Behaviour | Check for repo-tui updates — in the background, at startup and then on an interval, show "⬆ repo-tui update (N)" in the header | on (default) / off | `[behaviour] check_updates` |
+| Behaviour | Update check interval — how often to re-check while running | every 1/3/6 (default)/12/24 h | `[behaviour] update_check_hours` |
 | Behaviour | Auto-refresh status — rescan in the background, no blocking dialog; skipped while a dialog or command is open | off (default), every 1/2/5/10/15/30/60 min | `[behaviour] auto_refresh_minutes` |
 
 A value saved from the settings screen wins over the config file, so the

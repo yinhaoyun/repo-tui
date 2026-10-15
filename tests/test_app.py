@@ -771,7 +771,7 @@ def test_settings_tabs_change_theme_jobs_and_sort(dirty_tree):
             await pilot.press("tab")
             await pilot.pause()
             shown = [r.setting.name for r in screen.query("SettingRow") if r.display]
-            assert shown == ["max_workers", "sort", "result_screen", "auto_refresh_minutes", "check_updates"]
+            assert shown == ["max_workers", "sort", "result_screen", "auto_refresh_minutes", "check_updates", "update_check_hours"]
             await pilot.press("down", "right")
             await pilot.pause()
             assert app.config.sort == "changes"
@@ -1282,5 +1282,46 @@ def test_unknown_configured_theme_is_reported(dirty_tree, monkeypatch, tmp_path)
             assert any(
                 kw.get("severity") == "warning" and "no-such-theme" in m for m, kw in notes
             )
+
+    asyncio.run(scenario())
+
+
+def test_update_checks_repeat_on_an_interval_and_only_pop_up_on_news(dirty_tree, monkeypatch):
+    from repo_tui import self_update
+    from repo_tui.widgets.header_bar import HeaderBar
+
+    results = [
+        self_update.UpdateCheck(behind=1),
+        self_update.UpdateCheck(behind=1),  # nothing new: no popup
+        self_update.UpdateCheck(error="git fetch failed: offline"),
+        self_update.UpdateCheck(error="git fetch failed: offline"),  # same error: once
+        self_update.UpdateCheck(behind=3),  # more commits: popup
+    ]
+    monkeypatch.setattr(self_update, "check_for_update", lambda **kw: results.pop(0))
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        notes = []
+        monkeypatch.setattr(app, "notify", lambda message, **kw: notes.append(kw.get("title")))
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert app._update_timer is not None
+            assert app._update_timer._interval == 6 * 3600  # default: every 6 h
+            for _ in range(4):  # what the timer does every interval
+                app._update_check_tick()
+                await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert notes == [
+                "repo-tui update available",
+                "Couldn't check for repo-tui updates",
+                "repo-tui update available",
+            ]
+            assert app.query_one("#header", HeaderBar).update_behind == 3
+
+            app._apply_setting("update_check_hours", 1)
+            assert app._update_timer._interval == 3600
+            app._apply_setting("check_updates", False)
+            assert app._update_timer is None
 
     asyncio.run(scenario())
