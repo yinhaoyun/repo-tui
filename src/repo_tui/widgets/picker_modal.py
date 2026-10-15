@@ -1,6 +1,7 @@
 """Pick one value from a possibly long list (e.g. the manifest repo's
 branches), with a filter box on top. What's typed can also be used as is,
-for a value that isn't in the list; returns it via dismiss()."""
+for a value that isn't in the list (unless `allow_typed` is off); returns
+it via dismiss(). Matches come first, so Enter takes the best match."""
 
 from __future__ import annotations
 
@@ -23,7 +24,12 @@ class PickerModal(ModalScreen[str | None]):
     ]
 
     def __init__(
-        self, title: str, choices: list[str], current: str = "", placeholder: str = ""
+        self,
+        title: str,
+        choices: list[str],
+        current: str = "",
+        placeholder: str = "",
+        allow_typed: bool = True,
     ) -> None:
         self._title = title
         # The current value goes first, so Enter on an empty filter keeps it.
@@ -32,6 +38,7 @@ class PickerModal(ModalScreen[str | None]):
         ]
         self._current = current
         self._placeholder = placeholder
+        self._allow_typed = allow_typed
         self._shown: list[str] = []
         super().__init__()
 
@@ -56,14 +63,14 @@ class PickerModal(ModalScreen[str | None]):
         needle = text.strip().lower()
         self._shown = [c for c in self._choices if needle in c.lower()]
         options = []
-        typed = text.strip()
-        if typed and typed not in self._choices:
-            options.append(Option(f"use “{escape(typed)}” as typed", id=_TYPED))
         for i, choice in enumerate(self._shown):
             label = escape(choice)
             if choice == self._current:
                 label += "  [dim](current)[/]"
             options.append(Option(label, id=str(i)))
+        typed = text.strip()
+        if self._allow_typed and typed and typed not in self._choices:
+            options.append(Option(f"use “{escape(typed)}” as typed", id=_TYPED))
         option_list = self.query_one("#picker-list", OptionList)
         option_list.clear_options()
         option_list.add_options(options)

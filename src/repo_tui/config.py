@@ -66,6 +66,7 @@ class Config:
     auto_refresh_minutes: int = 0
     check_updates: bool = True
     ignore: IgnoreRules = field(default_factory=IgnoreRules)
+    custom_themes: dict = field(default_factory=dict)  # raw [themes.<name>] tables
     source: Path | None = None
 
 
@@ -108,7 +109,9 @@ SETTINGS = (
     ),
     Setting(
         "theme", "Display", "Theme",
-        "Colour theme for the whole app. Applied as soon as you change it.",
+        "Colour theme for the whole app, applied as soon as you change it. "
+        "←/→ steps through them; enter opens a filterable list. Add your own "
+        "under [themes.<name>] in the config file.",
         "theme", "display", "theme",
     ),
     Setting(
@@ -232,6 +235,7 @@ def _parse(path: Path) -> Config:
     config = Config(
         show_all_default=bool(display.get("show_all_default", False)),
         ignore=IgnoreRules(patterns=list(patterns), per_project=dict(per_project)),
+        custom_themes=data.get("themes", {}),
         source=path,
     )
     for setting in SETTINGS:

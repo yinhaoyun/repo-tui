@@ -37,7 +37,12 @@ show_all_default = false
 #
 # High-contrast keycaps for key hints and bold tips (default: true).
 # highlight_hints = true
-# Any Textual theme: textual-dark (default), textual-light, nord, gruvbox, ...
+# Any Textual theme: textual-dark (default), textual-light, nord, gruvbox,
+# dracula, tokyo-night, catppuccin-mocha, ...; repo-tui's extras: github-dark,
+# github-light, everforest-dark, everforest-light, kanagawa, ayu-dark,
+# ayu-mirage, ayu-light, night-owl, material-palenight, oceanic-next, cobalt2,
+# horizon, synthwave-84, zenburn, high-contrast-dark, high-contrast-light,
+# matrix, amber-crt; or one of your own from [themes.<name>] below.
 # theme = "nord"
 # Project list order: "changed" (default), "changes", "branch" or "path".
 # sort = "changed"
@@ -61,3 +66,21 @@ max_workers = 16
 # result_screen = "problems"
 # Rescan git status in the background every N minutes (0 = off, default).
 # auto_refresh_minutes = 5
+
+# Your own themes: one [themes.<name>] table each, then pick it with
+# `theme = "<name>"` above or in the settings screen (o -> Display -> Theme).
+# Only `primary` is required; Textual derives the rest. A theme with a bad
+# value is skipped and the problem is shown when repo-tui starts.
+#
+# [themes.my-theme]
+# dark = true
+# primary = "#ff8800"
+# secondary = "#88aaff"
+# accent = "#ffcc00"
+# warning = "#ffb000"      # key hints are drawn as black text on this colour
+# error = "#ff4444"
+# success = "#44dd66"
+# foreground = "#e6e6e6"
+# background = "#101418"
+# surface = "#161b22"
+# panel = "#1f2630"

@@ -19,6 +19,7 @@ from . import git_backend
 from . import hints
 from . import repo_backend
 from . import self_update
+from . import themes
 from .models import Project, SyncReport, TreeInfo
 from .widgets.action_panel import ActionPanel
 from .widgets.busy_modal import BusyModal
@@ -112,7 +113,14 @@ class RepoTuiApp(App):
         self.tree_info.total_projects = len(self.projects)
         self._apply_filters()
         self.query_one("#project-list", ProjectList).focus()
-        self._apply_theme(self.config.theme)
+        self._register_themes()
+        if not self._apply_theme(self.config.theme):
+            self.notify(
+                f"Unknown theme {escape(repr(self.config.theme))}; using {escape(self.theme)}. "
+                "Pick one with o → Display → Theme.",
+                severity="warning",
+                timeout=10,
+            )
         self._restart_auto_refresh()
         self.run_worker(self._refresh(), exclusive=True, group="refresh")
         if self.config.check_updates:
@@ -272,6 +280,23 @@ class RepoTuiApp(App):
         self.push_screen(
             SettingsScreen(self.config, list(self.available_themes), self._apply_setting)
         )
+
+    def _register_themes(self) -> None:
+        """repo-tui's extra themes, then the user's own from the config file
+        (which may replace one of the extras by using its name)."""
+        mine, errors = themes.custom_themes(self.config.custom_themes)
+        for theme in themes.EXTRA_THEMES + mine:
+            self.register_theme(theme)
+        if errors:
+            source = f" in {self.config.source}" if self.config.source else ""
+            shown = "\n".join(escape(e) for e in errors[:6])
+            more = f"\n…and {len(errors) - 6} more" if len(errors) > 6 else ""
+            self.notify(
+                shown + more,
+                title=f"Skipped custom theme(s): problems{escape(source)}",
+                severity="warning",
+                timeout=15,
+            )
 
     def _apply_theme(self, theme: str) -> bool:
         try:

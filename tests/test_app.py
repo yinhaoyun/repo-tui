@@ -1221,3 +1221,66 @@ def test_failed_startup_update_check_is_reported(dirty_tree, monkeypatch):
             assert any(kw.get("severity") == "warning" and "offline" in m for m, kw in notes)
 
     asyncio.run(scenario())
+
+
+def test_extra_and_custom_themes_and_their_problems(dirty_tree, monkeypatch, tmp_path):
+    config = tmp_path / "config.toml"
+    config.write_text(
+        '[display]\ntheme = "mine"\n'
+        '[themes.mine]\nprimary = "#ff8800"\nbackground = "#101418"\n'
+        '[themes.broken]\nprimary = "nope"\n'
+    )
+    monkeypatch.setenv("REPO_TUI_CONFIG", str(config))
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        notes = []
+        monkeypatch.setattr(app, "notify", lambda message, **kw: notes.append((message, kw)))
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert app.theme == "mine"
+            assert {"github-dark", "kanagawa", "synthwave-84", "broken"} & set(
+                app.available_themes
+            ) == {"github-dark", "kanagawa", "synthwave-84"}
+            assert any(
+                kw.get("severity") == "warning" and "[themes.broken] primary" in m
+                for m, kw in notes
+            )
+
+            # enter on the Theme row opens a filterable picker
+            await pilot.press("o")
+            await pilot.pause()
+            settings = app.screen_stack[-1]
+            assert isinstance(settings, SettingsScreen)
+            settings.show_tab(0)
+            while settings._selected_row().setting.name != "theme":
+                await pilot.press("down")
+            await pilot.press("enter")
+            await pilot.pause()
+            assert isinstance(app.screen_stack[-1], PickerModal)
+            await pilot.press(*"kanag", "enter")
+            await pilot.pause()
+            assert app.theme == "kanagawa"
+            assert app.config.theme == "kanagawa"
+
+    asyncio.run(scenario())
+
+
+def test_unknown_configured_theme_is_reported(dirty_tree, monkeypatch, tmp_path):
+    config = tmp_path / "config.toml"
+    config.write_text('[display]\ntheme = "no-such-theme"\n')
+    monkeypatch.setenv("REPO_TUI_CONFIG", str(config))
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        notes = []
+        monkeypatch.setattr(app, "notify", lambda message, **kw: notes.append((message, kw)))
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            assert app.theme == "textual-dark"
+            assert any(
+                kw.get("severity") == "warning" and "no-such-theme" in m for m, kw in notes
+            )
+
+    asyncio.run(scenario())

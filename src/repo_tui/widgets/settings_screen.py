@@ -3,7 +3,7 @@ tabs (Display / Sync / Behaviour), one row each with its current value.
 
 Keyboard: tab/shift+tab switch tabs, ↑/↓ (j/k) pick a row, ←/→ (h/l) change
 the value, enter/space toggle or step it (enter on a number types it in),
-esc/q/o close. Mouse: click a tab to switch, click a row to change it.
+esc/q/o close. Enter on the theme opens a filterable list. Mouse: click a tab to switch, click a row to change it.
 
 Every change is applied and saved at once through `on_change`, which returns
 a status line to show (where it was saved, or why it wasn't)."""
@@ -21,6 +21,7 @@ from textual.widgets import Static
 
 from ..config import SETTINGS, Config, Setting
 from ..hints import key, tip
+from .picker_modal import PickerModal
 from .prompt_modal import PromptModal
 
 TABS = list(dict.fromkeys(setting.tab for setting in SETTINGS))
@@ -109,7 +110,7 @@ class SettingsScreen(ModalScreen[None]):
         self.query_one("#settings-keys", Static).update(
             tip(
                 f"{key('tab')} next tab  {key('↑↓')} move  {key('←→')} change  "
-                f"{key('enter')} edit  {key('esc')} close"
+                f"{key('enter')} edit/pick  {key('esc')} close"
             )
         )
 
@@ -178,6 +179,23 @@ class SettingsScreen(ModalScreen[None]):
             handle,
         )
 
+    def _pick_theme(self, setting: Setting) -> None:
+        def handle(theme: str | None) -> None:
+            if theme:
+                self._set(setting, theme)
+
+        self.app.push_screen(
+            PickerModal(
+                f"[b]Theme[/] [dim]({len(self._themes)} available; ←/→ in settings "
+                "previews them one by one)[/]",
+                self._themes,
+                getattr(self._config, setting.name),
+                "filter themes",
+                allow_typed=False,
+            ),
+            handle,
+        )
+
     # -- actions ------------------------------------------------------------
 
     def show_tab(self, index: int) -> None:
@@ -206,6 +224,8 @@ class SettingsScreen(ModalScreen[None]):
         setting = self._selected_row().setting
         if setting.kind == "int":
             self._prompt_number(setting)
+        elif setting.kind == "theme":
+            self._pick_theme(setting)
         else:
             self._set(setting, self._stepped(setting, 1))
 

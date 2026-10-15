@@ -295,7 +295,7 @@ close with `esc`. Changes apply immediately and are saved to
 | Tab | Setting | Values | Config file key |
 |---|---|---|---|
 | Display | Highlight key hints & tips — keys as high-contrast keycaps, tips in bold colour, everywhere | on (default) / off | `[display] highlight_hints` |
-| Display | Theme | any Textual theme (`textual-dark` default, `nord`, `gruvbox`, `dracula`, …) | `[display] theme` |
+| Display | Theme — `←`/`→` steps through them, `enter` opens a filterable list | any Textual theme (`textual-dark` default, `nord`, `gruvbox`, `dracula`, `tokyo-night`, `catppuccin-*`, …), repo-tui's extras, or your own (below) | `[display] theme` |
 | Sync | Sync jobs (`-jN`) for sync, sync all and detach | 1–128 (default: one per CPU) | `[sync] jobs` |
 | Sync | Confirm before sync all — ask y/N before `Space S` | on / off (default) | `[sync] confirm_all` |
 | Behaviour | Status scan workers — parallel `git status` during a refresh | 1–128 (default 16) | `[performance] max_workers` |
@@ -307,6 +307,33 @@ close with `esc`. Changes apply immediately and are saved to
 A value saved from the settings screen wins over the config file, so the
 config file (below) sets your defaults and the screen overrides them per
 user without rewriting it. Invalid values in either file are ignored.
+
+## Themes
+
+Besides Textual's built-in themes, repo-tui adds `github-dark`,
+`github-light`, `everforest-dark`, `everforest-light`, `kanagawa`,
+`ayu-dark`, `ayu-mirage`, `ayu-light`, `night-owl`, `material-palenight`,
+`oceanic-next`, `cobalt2`, `horizon`, `synthwave-84`, `zenburn`,
+`high-contrast-dark`, `high-contrast-light`, `matrix` and `amber-crt`.
+
+To make your own, add a `[themes.<name>]` table to the config file (below)
+and pick it in the settings screen like any other:
+
+```toml
+[themes.my-theme]
+dark = true                # false for a light theme
+primary = "#ff8800"        # the only required colour
+background = "#101418"
+foreground = "#e6e6e6"
+warning = "#ffb000"        # key hints are black text on this, keep it bright
+# also: secondary, accent, error, success, surface, panel, boost
+```
+
+Colours are anything Textual understands (`"#ff8800"`, `"rgb(255,136,0)"`,
+`"orange"`). A theme with a bad colour or an unknown key is skipped, and
+repo-tui says which value was wrong when it starts; so does a configured
+theme name that doesn't exist. Using the name of one of repo-tui's extras
+replaces it.
 
 ## Configuring what counts as noise
 
