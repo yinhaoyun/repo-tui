@@ -28,6 +28,7 @@ HELP_SECTIONS = [
         ("a", 'toggle "show all" vs "hide unchanged" (default: hidden)'),
         ("i", "toggle showing ignored files in the file list"),
         ("o", "settings: theme, sync jobs, sort, auto-refresh, …"),
+        ("U", "update repo-tui itself from GitHub (asks first; never touches the tree)"),
         ("?", "toggle this help"),
         ("q, ctrl+c", "quit"),
     ]),
@@ -57,7 +58,7 @@ def help_text() -> str:
     lines += [
         "",
         tip("Tip: right-click a project row for its actions as a menu."),
-        tip('Tip: click "N changed" or "last sync" in the header for details.'),
+        tip('Tip: click "N changed", "last sync" or "⬆ repo-tui update" in the header.'),
         tip("Press any key to close this help."),
     ]
     return "\n".join(lines)

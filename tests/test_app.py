@@ -771,7 +771,7 @@ def test_settings_tabs_change_theme_jobs_and_sort(dirty_tree):
             await pilot.press("tab")
             await pilot.pause()
             shown = [r.setting.name for r in screen.query("SettingRow") if r.display]
-            assert shown == ["max_workers", "sort", "result_screen", "auto_refresh_minutes"]
+            assert shown == ["max_workers", "sort", "result_screen", "auto_refresh_minutes", "check_updates"]
             await pilot.press("down", "right")
             await pilot.pause()
             assert app.config.sort == "changes"
@@ -1114,5 +1114,110 @@ def test_switch_manifest_refuses_option_like_names(dirty_tree, monkeypatch):
             assert len(app.screen_stack) == 1
             assert notes and notes[-1][1]["severity"] == "error"
             assert "can't start with '-'" in notes[-1][0]
+
+    asyncio.run(scenario())
+
+
+def test_update_available_shows_in_header_and_U_updates_then_offers_restart(
+    dirty_tree, monkeypatch
+):
+    from repo_tui import self_update
+    from repo_tui.widgets.header_bar import HeaderBar
+
+    check = self_update.UpdateCheck(behind=2, commits=["abc1234 new thing", "def5678 fix"])
+    monkeypatch.setattr(self_update, "check_for_update", lambda **kw: check)
+    updates = []
+
+    def fake_update(say, batch=False):
+        updates.append(batch)
+        say("pulled new commits:\nabc1234 new thing", False)
+        say("done (aaaa -> bbbb).", False)
+        return 0
+
+    monkeypatch.setattr(self_update, "update", fake_update)
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        notes = []
+        monkeypatch.setattr(app, "notify", lambda message, **kw: notes.append((message, kw)))
+        async with app.run_test(size=(160, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            header = app.query_one("#header", HeaderBar)
+            assert header.update_behind == 2
+            assert header.query_one("#hdr-update").display
+            assert any("U" in m and kw.get("title") == "repo-tui update available"
+                       for m, kw in notes)
+
+            await pilot.press("U")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            confirm = app.screen_stack[-1]
+            assert isinstance(confirm, ConfirmModal)
+            assert "new thing" in str(confirm.query_one("#confirm-body").render())
+            assert updates == []  # nothing before y
+
+            await pilot.press("y")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert updates == [True]  # non-interactive git inside the TUI
+            assert isinstance(app.screen_stack[-1], ResultScreen)
+            assert header.update_behind == 0
+
+            await pilot.press("escape")  # close output -> restart offer
+            await pilot.pause()
+            assert isinstance(app.screen_stack[-1], ConfirmModal)
+            await pilot.press("y")
+            await pilot.pause()
+        assert app.restart_requested
+
+    asyncio.run(scenario())
+
+
+def test_U_explains_why_it_cant_update(dirty_tree, monkeypatch):
+    from repo_tui import self_update
+
+    check = self_update.UpdateCheck(behind=1, dirty=True, root=dirty_tree)
+    monkeypatch.setattr(self_update, "check_for_update", lambda **kw: check)
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        notes = []
+        monkeypatch.setattr(app, "notify", lambda message, **kw: notes.append((message, kw)))
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            notes.clear()
+            await pilot.press("U")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert len(app.screen_stack) == 1
+            message, kw = notes[-1]
+            assert kw["severity"] == "error" and "local changes" in message
+
+    asyncio.run(scenario())
+
+
+def test_failed_startup_update_check_is_reported(dirty_tree, monkeypatch):
+    from repo_tui import self_update
+
+    monkeypatch.setattr(
+        self_update, "check_for_update",
+        lambda **kw: self_update.UpdateCheck(error="git fetch failed: offline"),
+    )
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        notes = []
+        monkeypatch.setattr(app, "notify", lambda message, **kw: notes.append((message, kw)))
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert any(kw.get("severity") == "warning" and "offline" in m for m, kw in notes)
 
     asyncio.run(scenario())

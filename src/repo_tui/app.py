@@ -18,6 +18,7 @@ from . import config as config_mod
 from . import git_backend
 from . import hints
 from . import repo_backend
+from . import self_update
 from .models import Project, SyncReport, TreeInfo
 from .widgets.action_panel import ActionPanel
 from .widgets.busy_modal import BusyModal
@@ -67,6 +68,8 @@ class RepoTuiApp(App):
         Binding("u", "show_sync_report", "Last sync report"),
         Binding("y", "copy_path", "Copy path"),
         Binding("o", "settings", "Settings"),
+        # Updates repo-tui itself (asks first), never the tree.
+        Binding("U", "update_app", "Update repo-tui"),
         Binding("q", "quit", "Quit"),
         # The top layer only looks: anything that changes a checkout (sync,
         # detach, branch, checkout, discard, forall) is behind Space.
@@ -88,6 +91,9 @@ class RepoTuiApp(App):
         # Bumped by every foreground status scan, so a background scan that
         # was overtaken by one throws its (now older) results away.
         self._scan_generation = 0
+        # Set when the user asks to restart into a freshly updated repo-tui;
+        # __main__ re-execs after the app exits.
+        self.restart_requested = False
 
     def compose(self) -> ComposeResult:
         yield HeaderBar(id="header")
@@ -109,6 +115,8 @@ class RepoTuiApp(App):
         self._apply_theme(self.config.theme)
         self._restart_auto_refresh()
         self.run_worker(self._refresh(), exclusive=True, group="refresh")
+        if self.config.check_updates:
+            self.run_worker(self._check_for_update(), group="update-check")
 
     # -- data plumbing ----------------------------------------------------
 
@@ -291,6 +299,125 @@ class RepoTuiApp(App):
         except OSError as exc:
             return f"[b $text-error]Applied, but not saved: {escape(str(exc))}[/]"
         return f"[$text-success]✓ Saved[/] [dim]to {escape(str(path))}[/]"
+
+    # -- updating repo-tui itself ----------------------------------------
+
+    async def _check_for_update(self) -> None:
+        """Startup check, in the background: say so if GitHub has a newer
+        repo-tui; say why if the check failed (except for installs that
+        can't self-update anyway, which would only nag)."""
+        check = await asyncio.to_thread(self_update.check_for_update)
+        if check.not_a_checkout:
+            return
+        if check.error:
+            self.notify(
+                escape(check.error),
+                title="Couldn't check for repo-tui updates",
+                severity="warning",
+                timeout=8,
+            )
+            return
+        self.query_one("#header", HeaderBar).set_update_available(check.behind)
+        if check.available:
+            self.notify(
+                f"{check.behind} new commit(s) on GitHub. Press [b]U[/] to update.",
+                title="repo-tui update available",
+                timeout=10,
+            )
+
+    def action_update_app(self) -> None:
+        self.run_worker(self._prepare_update(), exclusive=True, group="update")
+
+    async def _prepare_update(self) -> None:
+        busy = BusyModal("Checking for repo-tui updates", show_log=False)
+        await self.push_screen(busy)
+        busy.set_phase("Fetching from GitHub…")
+        try:
+            check = await asyncio.to_thread(self_update.check_for_update)
+        finally:
+            await busy.dismiss()
+        header = self.query_one("#header", HeaderBar)
+        if not check.error:
+            header.set_update_available(check.behind)
+        if check.blocker:
+            self.notify(
+                escape(check.blocker),
+                title="Can't update repo-tui",
+                severity="error",
+                timeout=15,
+            )
+            return
+        if not check.available:
+            local = (
+                f" ({check.ahead} local commit(s) not on GitHub)" if check.ahead else ""
+            )
+            self.notify(f"repo-tui is up to date{escape(local)}.", timeout=4)
+            return
+        shown = "\n".join(f"  {escape(line)}" for line in check.commits)
+        if check.behind > len(check.commits):
+            shown += f"\n  …and {check.behind - len(check.commits)} more"
+        body = (
+            f"{shown}\n\n[dim]in {escape(str(check.root))}\n"
+            "$ git pull --ff-only, then reinstall[/]\n"
+            "Restart repo-tui afterwards to use the new version (it offers to)."
+        )
+
+        def handle(confirmed: bool | None) -> None:
+            if confirmed:
+                self.run_worker(self._run_update(), exclusive=True, group="update")
+
+        self.push_screen(
+            ConfirmModal(f"Update repo-tui? {check.behind} new commit(s)", body), handle
+        )
+
+    async def _run_update(self) -> None:
+        busy = BusyModal("Updating repo-tui", command="git pull --ff-only && reinstall")
+        await self.push_screen(busy)
+        lines: list[str] = []
+        loop = asyncio.get_running_loop()
+
+        def say(message: str, is_error: bool) -> None:
+            for i, line in enumerate(message.splitlines()):
+                line = f"error: {line}" if is_error and i == 0 else line
+                lines.append(line)
+                loop.call_soon_threadsafe(busy.add_output, line)
+
+        try:
+            returncode = await asyncio.to_thread(self_update.update, say, True)
+        except Exception as exc:  # noqa: BLE001 - shown, not raised into the UI
+            say(str(exc), True)
+            returncode = None
+        finally:
+            await busy.dismiss()
+        updated = returncode == 0 and not any("already up to date" in l for l in lines)
+        if updated:
+            self.query_one("#header", HeaderBar).set_update_available(0)
+        result = ResultScreen("update repo-tui", lines, returncode)
+
+        def offer_restart(_=None) -> None:
+            if updated:
+                self.push_screen(
+                    ConfirmModal(
+                        "repo-tui was updated. Restart it now?",
+                        "The running copy is still the old version until it restarts.",
+                    ),
+                    self._restart_if_confirmed,
+                )
+
+        self.push_screen(result, offer_restart)
+        if result.severity != "information":
+            first = next((line for _, line in result.problem_lines), "")
+            self.notify(
+                escape(first or result.status),
+                title=f"update repo-tui — {result.status}",
+                severity=result.severity,
+                timeout=10,
+            )
+
+    def _restart_if_confirmed(self, confirmed: bool | None) -> None:
+        if confirmed:
+            self.restart_requested = True
+            self.exit()
 
     async def _show_diff(self, project: Project, rel_path: str) -> None:
         text = await asyncio.to_thread(git_backend.read_file_diff, project, rel_path)

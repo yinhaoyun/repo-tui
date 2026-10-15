@@ -1,8 +1,9 @@
 """Top status bar: manifest/branch info, aggregate change counts, what the
-last sync changed, and last refresh time.
+last sync changed, last refresh time, and whether a newer repo-tui is out.
 
-"N changed" and "last sync: N updated" are clickable: they open the changed
-projects summary and the last sync's report (also on `Space w` / `Space u`)."""
+"N changed", "last sync: N updated" and "⬆ repo-tui update" are clickable:
+they open the changed projects summary, the last sync's report (also `w` /
+`u`) and the repo-tui update (also `U`)."""
 
 from __future__ import annotations
 
@@ -39,6 +40,7 @@ class HeaderBar(Horizontal):
         self.syncing = False
         self.last_refresh = 0.0
         self.report: SyncReport | None = None
+        self.update_behind = 0  # new repo-tui commits on GitHub
 
     def compose(self):
         yield Static(id="hdr-info")
@@ -46,6 +48,7 @@ class HeaderBar(Horizontal):
         yield Static("  │  ", id="hdr-sync-sep")
         yield HeaderItem("show_sync_report", id="hdr-sync", classes="hdr-link")
         yield Static(id="hdr-status")
+        yield HeaderItem("update_app", id="hdr-update", classes="hdr-link")
 
     def on_mount(self) -> None:
         self._refresh_display()
@@ -66,6 +69,10 @@ class HeaderBar(Horizontal):
 
     def set_report(self, report: SyncReport | None) -> None:
         self.report = report
+        self._refresh_display()
+
+    def set_update_available(self, behind: int) -> None:
+        self.update_behind = behind
         self._refresh_display()
 
     def _refresh_display(self) -> None:
@@ -106,3 +113,6 @@ class HeaderBar(Horizontal):
         self.query_one("#hdr-status", Static).update(
             f"  │  {status_bit}  │  root: {root}"
         )
+        update = self.query_one("#hdr-update", Static)
+        update.display = self.update_behind > 0
+        update.update(f"[b $text-success]⬆ repo-tui update ({self.update_behind})[/]")

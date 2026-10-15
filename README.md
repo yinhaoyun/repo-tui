@@ -98,6 +98,19 @@ repo-tui /path/to/tree
 
 ## Upgrading
 
+repo-tui checks GitHub for a newer version when it starts (in the
+background; turn it off under `o` → Behaviour). When there is one, the
+header shows **⬆ repo-tui update (N)** and a toast says so. Press `U` (or
+click that header item) to update from inside the app: it fetches again,
+shows the new commits and asks y/N, pulls and reinstalls behind a progress
+dialog, shows the output, then offers to restart into the new version. If
+it can't go ahead — local changes or local commits in the clone, no network,
+not a git install — it says why instead (the same cases as below). A
+failed startup check is reported as a warning toast; an install that can't
+self-update at all (not a git clone) isn't nagged about at startup.
+
+From the shell:
+
 ```sh
 repo-tui update
 ```
@@ -205,6 +218,7 @@ right after `repo sync` — is *not* treated as changed on its own.
 | `u` | last sync report — which projects moved to which commit, and what came in (also: click "last sync" in the header) |
 | `y` | copy (yank) the selected project's absolute path |
 | `o` | settings — theme, highlighted hints, sync jobs, sort, auto-refresh, … (see below) |
+| `U` | update repo-tui itself from GitHub — asks first, then offers to restart (see [Upgrading](#upgrading); also: click "⬆ repo-tui update" in the header) |
 | `q` | quit |
 | `Space` then `s` | `repo sync` the selected project |
 | `Space` then `S` | `repo sync` the whole tree |
@@ -287,6 +301,7 @@ close with `esc`. Changes apply immediately and are saved to
 | Behaviour | Status scan workers — parallel `git status` during a refresh | 1–128 (default 16) | `[performance] max_workers` |
 | Behaviour | Sort project list | changed first (default), most changes first, by branch, by path | `[display] sort` (`changed`/`changes`/`branch`/`path`) |
 | Behaviour | Show command output — after a repo command, always open its output, or only when it failed or printed errors/warnings (a toast otherwise) | always (default) / only on errors/warnings | `[behaviour] result_screen` (`always`/`problems`) |
+| Behaviour | Check for repo-tui updates — at startup, check GitHub in the background and show "⬆ repo-tui update (N)" in the header | on (default) / off | `[behaviour] check_updates` |
 | Behaviour | Auto-refresh status — rescan in the background, no blocking dialog; skipped while a dialog or command is open | off (default), every 1/2/5/10/15/30/60 min | `[behaviour] auto_refresh_minutes` |
 
 A value saved from the settings screen wins over the config file, so the

@@ -118,3 +118,40 @@ def test_reinstall_uses_uv_in_a_uv_tool_env(tmp_path, monkeypatch):
     )
     self_update._pip_install_editable(tmp_path)
     assert calls[0][1:] == ["tool", "install", "--quiet", "--editable", "--reinstall", str(tmp_path)]
+
+
+def _real_check(**kw):
+    # conftest stubs check_for_update out for the app tests; test the real one
+    return _CHECK(**kw)
+
+
+_CHECK = self_update.check_for_update
+
+
+def test_check_reports_new_commits(clone_pair):
+    origin, clone = clone_pair
+    assert not _real_check().available
+    (origin / "NEW_FILE.txt").write_text("hello\n")
+    _git(origin, "add", "-A")
+    _git(origin, "commit", "-q", "-m", "add a file")
+
+    check = _real_check()
+    assert (check.behind, check.ahead, check.error, check.blocker) == (1, 0, "", "")
+    assert check.commits[0].endswith("add a file")
+
+
+def test_check_explains_what_blocks_an_update(clone_pair, tmp_path):
+    origin, clone = clone_pair
+    (clone / "src" / "repo_tui" / "__init__.py").write_text("# local edit\n")
+    assert "local changes" in _real_check().blocker
+
+    _git(clone, "remote", "set-url", "origin", str(tmp_path / "gone.git"))
+    check = _real_check()
+    assert check.error.startswith("git fetch failed") and "gone.git" in check.error
+
+
+def test_check_on_a_non_git_install(tmp_path, monkeypatch):
+    lonely = tmp_path / "no_git_here" / "src" / "repo_tui" / "__init__.py"
+    monkeypatch.setattr(self_update.repo_tui, "__file__", str(lonely))
+    check = _real_check()
+    assert check.not_a_checkout and check.blocker

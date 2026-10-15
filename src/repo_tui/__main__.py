@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -35,7 +36,16 @@ def run() -> None:
     # (larger) textual import.
     from .app import RepoTuiApp
 
-    RepoTuiApp(repo_root).run()
+    app = RepoTuiApp(repo_root)
+    app.run()
+    if app.restart_requested:  # after an in-app update (U)
+        argv = [sys.executable, "-m", "repo_tui", *sys.argv[1:]]
+        try:
+            os.execv(sys.executable, argv)
+        except OSError as exc:
+            print(f"repo-tui: updated, but couldn't restart ({exc}); run it again.",
+                  file=sys.stderr)
+            sys.exit(1)
 
 
 if __name__ == "__main__":

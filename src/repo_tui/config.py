@@ -64,6 +64,7 @@ class Config:
     sort: str = "changed"
     result_screen: str = "always"
     auto_refresh_minutes: int = 0
+    check_updates: bool = True
     ignore: IgnoreRules = field(default_factory=IgnoreRules)
     source: Path | None = None
 
@@ -144,6 +145,12 @@ SETTINGS = (
         "Rescan git status in the background every N minutes, without the "
         "blocking dialog. Skipped while a dialog or command is open.",
         "choice", "behaviour", "auto_refresh_minutes", choices=AUTO_REFRESH_CHOICES,
+    ),
+    Setting(
+        "check_updates", "Behaviour", "Check for repo-tui updates",
+        "At startup, check GitHub in the background for a newer repo-tui and "
+        "say so in the header. U updates it either way.",
+        "bool", "behaviour", "check_updates",
     ),
 )
 SETTINGS_BY_NAME = {setting.name: setting for setting in SETTINGS}
