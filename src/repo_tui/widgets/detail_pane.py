@@ -96,12 +96,6 @@ class FileTable(DataTable):
         if self._files:
             self.move_cursor(row=min(row, len(self._files) - 1))
 
-    def on_focus(self) -> None:
-        self.screen.query_one("#keybar").show_top_level(file_focus=True)
-
-    def on_blur(self) -> None:
-        self.screen.query_one("#keybar").show_top_level()
-
     def file_at_cursor(self) -> FileStatus | None:
         if not self._files or self.cursor_row is None:
             return None

@@ -71,7 +71,6 @@ class RepoTuiApp(App):
         Binding("R", "refresh_status", "Refresh all"),
         Binding("w", "show_changed", "Why changed"),
         Binding("u", "show_sync_report", "Last sync report"),
-        Binding("y", "copy_path", "Copy path"),
         Binding("o", "settings", "Settings"),
         # Updates repo-tui itself (asks first), never the tree.
         Binding("U", "update_app", "Update repo-tui"),
@@ -226,6 +225,16 @@ class RepoTuiApp(App):
 
     # -- message handlers ---------------------------------------------------
 
+    def on_descendant_focus(self, event) -> None:  # noqa: ANN001 - textual event
+        """Switch the key bar's focus line to whatever just got focus on
+        the main screen (focus inside a dialog doesn't change it)."""
+        widget = event.widget
+        if widget.screen is not self.screen_stack[0]:
+            return
+        context = {"project-list": "projects", "file-table": "files", "filter-bar": "filter"}
+        if widget.id in context:
+            self.query_one("#keybar", KeyBar).show_top_level(context[widget.id])
+
     def on_project_highlighted(self, message: ProjectHighlighted) -> None:
         self.query_one("#detail-pane", DetailPane).show_project(
             message.project, self.show_ignored
@@ -323,7 +332,7 @@ class RepoTuiApp(App):
         setattr(self.config, name, value)
         if name == "highlight_hints":
             hints.set_highlight(value)
-            self.query_one("#keybar", KeyBar).refresh_hints()
+            self.query_one("#keybar", KeyBar).show_top_level()
             self._sync_detail_pane()
         elif name == "sort":
             self._apply_filters()

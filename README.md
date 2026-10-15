@@ -205,6 +205,19 @@ right after `repo sync` — is *not* treated as changed on its own.
 
 ## Keys
 
+There are two kinds of keys, and the bottom bar keeps them apart on two
+lines:
+
+- **Focus keys** (top line, behind a coloured label such as `PROJECT LIST`,
+  `FILE LIST` or `FILTER`): they act on whatever has focus, and the line
+  changes as you move focus with `tab`. The same key can differ by focus:
+  `y` copies the project's path in the project list and the file's path in
+  the file list.
+- **Global keys** (bottom line, behind a muted `GLOBAL` label): they work
+  wherever focus is, and that line never changes.
+
+The `?` help lists them the same way.
+
 | Key | Action |
 |---|---|
 | `↑`/`↓`, `j`/`k`, mouse | navigate / select |
@@ -220,7 +233,7 @@ right after `repo sync` — is *not* treated as changed on its own.
 | `R` | refresh all (re-run git status across the tree) |
 | `w` | why each project counts as changed (also: click "N changed" in the header) |
 | `u` | last sync report — which projects moved to which commit, and what came in (also: click "last sync" in the header) |
-| `y` | copy (yank) the selected project's absolute path |
+| `y` (project list focused) | copy (yank) the selected project's absolute path — in the file list, the file's |
 | `o` | settings — theme, highlighted hints, sync jobs, sort, auto-refresh, … (see below) |
 | `v` | version — show the running repo-tui (version, commit) and check GitHub for a newer one right now; always says what it found |
 | `U` | update repo-tui itself from GitHub — asks first, then offers to restart (see [Upgrading](#upgrading); also: click "⬆ repo-tui update" in the header) |

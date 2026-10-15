@@ -1397,7 +1397,7 @@ def test_file_list_keys_stage_unstage_revert_history(dirty_tree, monkeypatch):
             await pilot.pause()
             await app.workers.wait_for_complete()
             file_table = await _focus_file(pilot, app, "README.md")
-            assert "file:" in str(app.query_one("#keybar").render())
+            assert app.query_one("#keybar").context == "files"
 
             # look: history, in a viewer
             await pilot.press("l")
@@ -1493,3 +1493,49 @@ def test_file_list_edit_and_copy_path(dirty_tree, monkeypatch, tmp_path):
             assert "not found" in notes[-1][0]
 
     asyncio.run(scenario())
+
+
+def test_key_bar_focus_line_follows_focus_and_global_line_stays(dirty_tree, monkeypatch):
+    from repo_tui.widgets.keybar import global_hint
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        copied = []
+        monkeypatch.setattr(app, "copy_to_clipboard", copied.append)
+        async with app.run_test(size=(200, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            keybar = app.query_one("#keybar")
+
+            def lines():
+                return str(keybar.render()).split("\n")
+
+            assert keybar.context == "projects"
+            focus, global_ = lines()
+            assert focus.startswith(" PROJECT LIST ") and "copy project path" in focus
+            assert global_.startswith(" GLOBAL ")
+            await pilot.press("y")  # focus key: the project's path here
+            assert copied[-1] == str(dirty_tree / "frameworks/base")
+
+            await pilot.press("tab")
+            await pilot.pause()
+            focus, global_after = lines()
+            assert focus.startswith(" FILE LIST ") and "blame" in focus
+            assert global_after == global_  # the global line never changes
+            await pilot.press("y")  # ...and the file's path here
+            assert copied[-1].startswith(str(dirty_tree / "frameworks/base") + "/")
+
+            await pilot.press("/")
+            await pilot.pause()
+            assert lines()[0].startswith(" FILTER ")
+            await pilot.press("escape")
+            await pilot.pause()
+            assert keybar.context == "projects"
+
+            # a dialog's own focus doesn't change it
+            await pilot.press("space")
+            await pilot.pause()
+            assert keybar.context == "projects"
+
+    asyncio.run(scenario())
+    assert "PROJECT" not in global_hint() and "FILE" not in global_hint()

@@ -15,15 +15,17 @@ HELP_SECTIONS = [
         ("tab / shift+tab", "switch focus between left and right panes"),
         ("enter", "open diff for the selected file (right pane; more under File list)"),
         ("mouse", "left-click a row to select it, scroll wheel to scroll"),
-        ("right-click", "open the project context menu (left pane)"),
         ("drag │", "drag the divider between the panes to resize them"),
     ]),
-    ("Look — never changes a checkout (lowercase: this project, Shift: whole tree)", [
+    ("Project list — while it has focus", [
+        ("y", "copy (yank) the selected project's absolute path"),
+        ("right-click", "the project's actions as a menu"),
+    ]),
+    ("Global — anywhere; never changes a checkout (lowercase: this project, Shift: whole tree)", [
         ("r", "refresh the selected project (e.g. after editing it elsewhere)"),
         ("R", "refresh all (parallel git status across every project)"),
         ("w", "why each project counts as changed"),
         ("u", "last sync report: which projects got which commits"),
-        ("y", "copy (yank) the selected project's absolute path"),
         ("/", "filter the project list by path/name"),
         ("a", 'toggle "show all" vs "hide unchanged" (default: hidden)'),
         ("i", "toggle showing ignored files in the file list"),
@@ -58,7 +60,11 @@ _KEY_WIDTH = max(len(keys) for _, rows in HELP_SECTIONS for keys, _ in rows) + 2
 
 
 def help_text() -> str:
-    lines = ["[b]repo-tui[/] — key reference"]
+    lines = [
+        "[b]repo-tui[/] — key reference",
+        "[dim]The bottom bar shows the keys for what has focus on its top line "
+        "(it changes as you move), and the global keys below it.[/]",
+    ]
     for title, rows in HELP_SECTIONS:
         lines += ["", f"[b u]{title}[/]"]
         lines += [
