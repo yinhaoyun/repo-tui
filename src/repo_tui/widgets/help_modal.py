@@ -13,13 +13,13 @@ HELP_SECTIONS = [
     ("Navigation", [
         ("↑/↓, j/k", "move selection in the focused pane"),
         ("tab / shift+tab", "switch focus between left and right panes"),
-        ("enter", "open diff for the selected file (right pane; more under File list)"),
+        ("click", "on a file row: open its diff"),
         ("mouse", "left-click a row to select it, scroll wheel to scroll"),
         ("drag │", "drag the divider between the panes to resize them"),
     ]),
     ("Project list — while it has focus", [
         ("y", "copy (yank) the selected project's absolute path"),
-        ("right-click", "the project's actions as a menu"),
+        ("enter, shift+F10", "the project's actions as a menu (also right-click)"),
     ]),
     ("Global — anywhere; never changes a checkout (lowercase: this project, Shift: whole tree)", [
         ("r", "refresh the selected project (e.g. after editing it elsewhere)"),
@@ -36,7 +36,8 @@ HELP_SECTIONS = [
         ("q, ctrl+c", "quit"),
     ]),
     ("File list — while it has focus (tab to it), on the file at the cursor", [
-        ("enter / click", "diff since HEAD (staged + unstaged; untracked: whole file)"),
+        ("enter, shift+F10", "the file's actions as a menu (also right-click)"),
+        ("click", "diff since HEAD (staged + unstaged; untracked: whole file)"),
         ("l", "history: commits that touched the file (follows renames)"),
         ("b", "blame"),
         ("e", "open in $VISUAL / $EDITOR (vi if unset), then rescan"),
@@ -73,7 +74,7 @@ def help_text() -> str:
         ]
     lines += [
         "",
-        tip("Tip: right-click a project row for its actions as a menu."),
+        tip("Tip: enter, shift+F10 or right-click on a project or file opens its menu."),
         tip('Tip: click "N changed", "last sync" or "⬆ repo-tui update" in the header.'),
         tip("Press any key to close this help."),
     ]

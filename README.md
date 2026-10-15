@@ -195,7 +195,8 @@ uv manages it, and `which repo-tui` shows where the command lives.
   does (sync, detach, branch, checkout, discard, forall, switch manifest), grouped into "this project" and
   "whole tree", with the target project in its title. It stays open until
   you press an action key (runs it, then closes), or `Esc`/`Space` to exit.
-  Right-clicking a project row opens the per-project actions as a menu.
+  Right-clicking a project row — or `enter` / `shift+F10` on it — opens
+  the per-project actions as a menu; the same on a file opens the file's.
 
 A project counts as "changed" if it has any non-ignored file changes, is
 ahead/behind its upstream, or is checked out on any local branch (e.g. one
@@ -222,8 +223,8 @@ The `?` help lists them the same way.
 |---|---|
 | `↑`/`↓`, `j`/`k`, mouse | navigate / select |
 | `tab` | switch focus between panes |
-| `enter` / click (on a file row) | open that file's diff |
-| right-click (on a project row) | open the project context menu |
+| click (on a file row) | open that file's diff |
+| `enter` / `shift+F10` / right-click (on a project or file row) | open that project's or file's menu |
 | drag the `│` divider | resize the project list vs. the detail pane |
 | `?` | help |
 | `/` | filter projects by path/name |
@@ -256,7 +257,8 @@ file at the cursor, and the bottom bar shows them first:
 
 | Key | Action |
 |---|---|
-| `enter` / click | diff since HEAD: staged and unstaged changes together; an untracked file shows its whole content |
+| `enter` / `shift+F10` / right-click | the file's menu: diff, history, blame, edit, copy path, stage, unstage, revert — only the ones that fit the file (no blame for an untracked file, no unstage when nothing is staged) |
+| click | diff since HEAD: staged and unstaged changes together; an untracked file shows its whole content |
 | `l` | history — the commits that touched the file (`git log --follow`) |
 | `b` | blame |
 | `e` | open it in `$VISUAL` / `$EDITOR` (`vi` if neither is set); repo-tui steps aside while the editor runs and rescans the project after |
@@ -282,7 +284,9 @@ The keys follow two rules:
 `Space` rather than a tmux-style `ctrl+b` prefix: it's one key, and it
 doesn't collide with tmux, which you're likely running on a build machine.
 The per-project actions (refresh, sync, detach, branch, checkout, discard,
-copy) are also available by right-clicking a project row.
+copy) are also available as a menu: right-click a project row, or press
+`enter` or `shift+F10` on it (`shift+F10` is the usual keyboard "right-click"
+in desktop apps).
 
 While a `repo` command or a status refresh (at startup, `r`/`R`, and after every
 `repo` command) runs, a dialog blocks all other keys and clicks. A refresh

@@ -100,7 +100,8 @@ def test_hides_clean_projects_by_default_and_filters_ignored_noise(dirty_tree):
     asyncio.run(scenario())
 
 
-def test_enter_on_file_row_opens_diff_screen(dirty_tree):
+def test_enter_enter_on_file_row_opens_diff_screen(dirty_tree):
+    # enter opens the file's menu; Diff is its first entry
     async def scenario():
         app = RepoTuiApp(dirty_tree)
         async with app.run_test() as pilot:
@@ -115,6 +116,9 @@ def test_enter_on_file_row_opens_diff_screen(dirty_tree):
                 if file_table.file_at_cursor().path == "real_change.c":
                     break
 
+            await pilot.press("enter")
+            await pilot.pause()
+            assert isinstance(app.screen_stack[-1], ContextMenu)
             await pilot.press("enter")
             await pilot.pause()
             await app.workers.wait_for_complete()
@@ -1607,5 +1611,73 @@ def test_unshallow_only_the_selected_project(dirty_tree, tmp_path):
             await pilot.pause()
             assert len(app.screen_stack) == 1
             assert "already has its full history" in notes[-1]
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("menu_key", ["enter", "shift+f10"])
+def test_menu_key_opens_the_project_menu(dirty_tree, menu_key):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(160, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press(menu_key)
+            await pilot.pause()
+            menu = app.screen_stack[-1]
+            assert isinstance(menu, ContextMenu)
+            assert menu._title == "frameworks/base"
+            assert ("unshallow" in [o for o, _ in menu._options]) is False
+            await pilot.press("escape")
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("menu_key", ["enter", "shift+f10", "right-click"])
+def test_file_menu_offers_what_fits_and_runs_it(dirty_tree, menu_key):
+    base = dirty_tree / "frameworks/base"
+    (base / "brand_new.txt").write_text("x\n")  # untracked
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(160, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            file_table = await _focus_file(pilot, app, "brand_new.txt")
+            row = file_table.cursor_row
+            if menu_key == "right-click":
+                await pilot.click(FileTable, offset=(5, row + 1), button=3)
+            else:
+                await pilot.press(menu_key)
+            await pilot.pause()
+            menu = app.screen_stack[-1]
+            assert isinstance(menu, ContextMenu)  # not the diff
+            ids = [o for o, _ in menu._options]
+            # untracked, nothing staged: no blame, no unstage
+            assert ids == ["diff", "log", "edit", "copy", "stage", "revert"]
+
+            menu.query_one("OptionList").highlighted = ids.index("stage")
+            await pilot.press("enter")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            out = subprocess.run(["git", "status", "--porcelain", "--", "brand_new.txt"],
+                                 cwd=base, capture_output=True, text=True).stdout
+            assert out == "A  brand_new.txt\n"
+
+    asyncio.run(scenario())
+
+
+def test_left_click_on_a_file_still_opens_its_diff(dirty_tree):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(160, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.click(FileTable, offset=(5, 1))
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert isinstance(app.screen_stack[-1], DiffScreen)
 
     asyncio.run(scenario())

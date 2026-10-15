@@ -558,6 +558,46 @@ class RepoTuiApp(App):
             return None
         return project, file
 
+    def action_file_menu(self) -> None:
+        """The file's actions as a menu: right-click, enter or shift+F10 on
+        the file list. Offers only what makes sense for this file."""
+        selected = self._selected_file()
+        if selected is None:
+            return
+        project, file = selected
+        options = [("diff", "Diff"), ("log", "History")]
+        if not file.is_untracked:
+            options.append(("blame", "Blame"))
+        if (project.abs_path / file.path).is_file():
+            options.append(("edit", "Edit in $EDITOR"))
+        options.append(("copy", "Copy path"))
+        options.append(("stage", "Stage (git add)"))
+        if file.is_staged:
+            options.append(("unstage", "Unstage"))
+        options.append(("revert", "Revert changes…"))
+        actions = {
+            "log": self.action_file_log,
+            "blame": self.action_file_blame,
+            "edit": self.action_edit_file,
+            "copy": self.action_copy_file_path,
+            "stage": self.action_stage_file,
+            "unstage": self.action_unstage_file,
+            "revert": self.action_revert_file,
+        }
+
+        def handle(choice: str | None) -> None:
+            if choice == "diff":
+                self.run_worker(self._show_diff(project, file), exclusive=True, group="diff")
+            elif choice in actions:
+                actions[choice]()
+
+        self.push_screen(ContextMenu(f"{project.path}/{file.path}", options), handle)
+
+    def action_project_menu(self) -> None:
+        project = self._selected_project()
+        if project is not None:
+            self._open_context_menu(project)
+
     def action_file_log(self) -> None:
         selected = self._selected_file()
         if selected is None:

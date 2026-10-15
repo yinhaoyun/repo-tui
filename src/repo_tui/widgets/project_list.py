@@ -45,8 +45,11 @@ class ProjectList(DataTable):
     BINDINGS = [
         Binding("j", "cursor_down", show=False),
         Binding("k", "cursor_up", show=False),
-        # Focus key: in the file list, y copies the file's path instead.
+        # Focus keys: in the file list, y copies the file's path instead.
         Binding("y", "app.copy_path", "Copy project path", show=False),
+        # The right-click menu from the keyboard (shift+F10 is the usual
+        # "context menu" key in desktop apps).
+        Binding("enter,shift+f10", "app.project_menu", "Menu", show=False),
     ]
 
     def __init__(self, **kwargs) -> None:

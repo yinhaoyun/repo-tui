@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from textual import events
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
@@ -54,8 +55,9 @@ class ProjectSummary(Static):
         if project.files:
             lines.append(
                 tip(
-                    f"{key('tab')} to the file list: {key('enter')} diff  {key('l')} history  "
-                    f"{key('b')} blame  {key('e')} edit  {key('space')} stage/unstage/revert"
+                    f"{key('tab')} to the file list: {key('enter')} menu  {key('l')} history  "
+                    f"{key('b')} blame  {key('e')} edit  {key('space')} stage/unstage/revert;"
+                    " click a file for its diff"
                 )
             )
         self.update("\n".join(lines))
@@ -73,6 +75,8 @@ class FileTable(DataTable):
         Binding("b", "app.file_blame", "Blame", show=False),
         Binding("e", "app.edit_file", "Edit", show=False),
         Binding("y", "app.copy_file_path", "Copy file path", show=False),
+        # The file's menu (a click still opens the diff directly).
+        Binding("enter,shift+f10", "app.file_menu", "Menu", show=False),
     ]
 
     def __init__(self, **kwargs) -> None:
@@ -100,6 +104,20 @@ class FileTable(DataTable):
             row = paths.index(current.path)
         if self._files:
             self.move_cursor(row=min(row, len(self._files) - 1))
+
+    def on_click(self, event: events.Click) -> None:
+        """Right-click: the file's menu, instead of DataTable's select (which
+        would open the diff)."""
+        if event.button != 3:
+            return
+        event.prevent_default()
+        event.stop()
+        row_index = event.style.meta.get("row")
+        if row_index is None or not (0 <= row_index < len(self._files)):
+            return
+        self.move_cursor(row=row_index)
+        self.focus()
+        self.app.action_file_menu()
 
     def file_at_cursor(self) -> FileStatus | None:
         if not self._files or self.cursor_row is None:
