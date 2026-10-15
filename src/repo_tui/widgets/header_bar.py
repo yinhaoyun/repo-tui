@@ -72,9 +72,11 @@ class HeaderBar(Horizontal):
         if not self.is_mounted:
             return
         info = self.tree_info
-        manifest_bit = escape(info.manifest_branch or "?") if info else "?"
+        manifest_bit = f"[b cyan]{escape(info.manifest_branch or '?') if info else '?'}[/]"
+        if info and info.manifest_name:
+            manifest_bit += f" [dim]/ {escape(info.manifest_name)}[/]"
         self.query_one("#hdr-info", Static).update(
-            f"[b]repo-tui[/]  │  manifest: [b cyan]{manifest_bit}[/]  │  "
+            f"[b]repo-tui[/]  │  manifest: {manifest_bit}  │  "
             f"{self.total} projects, "
         )
         self.query_one("#hdr-changed", Static).update(

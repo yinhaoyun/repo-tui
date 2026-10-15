@@ -7,7 +7,12 @@ import pytest
 from repo_tui.repo_backend import (
     RepoTreeError,
     _stream_subprocess_tty,
+    current_manifest_file,
+    fetch_manifests,
     find_repo_root,
+    manifest_branches,
+    manifest_files,
+    switch_manifest,
     load_projects,
     load_tree_info,
     sync_args,
@@ -117,3 +122,81 @@ def test_stream_subprocess_tty_splits_progress_from_output(tmp_path):
     # redraws that arrive in one read collapse to the newest one
     assert progress[-1] == "Fetching: 100% [4 jobs] (2/2) 0:02 | p2"
     assert all(line.startswith("Fetching: ") for line in progress)
+
+
+def test_manifest_branch_follows_repos_default_branch_tracking(fake_tree):
+    # Real repo checks the manifest out on a local "default" branch that
+    # tracks the branch given to `repo init -b`.
+    manifests = fake_tree / ".repo" / "manifests"
+    _git(manifests, "branch", "-m", "default")
+    _git(manifests, "config", "branch.default.merge", "refs/heads/android-15")
+    assert load_tree_info(fake_tree).manifest_branch == "android-15"
+
+
+def test_include_stub_manifest_is_followed(fake_tree):
+    # Newer repo writes .repo/manifest.xml as a stub that <include>s the file.
+    link = fake_tree / ".repo" / "manifest.xml"
+    link.unlink()
+    link.write_text('<manifest><include name="default.xml" /></manifest>')
+    assert current_manifest_file(fake_tree) == "default.xml"
+    by_path = {p.path: p for p in load_projects(fake_tree)}
+    assert by_path["frameworks/base"].manifest_revision == "main"
+
+
+def test_manifest_branches_and_files(fake_tree, tmp_path):
+    manifests = fake_tree / ".repo" / "manifests"
+    _git(manifests, "checkout", "-q", "-b", "other")
+    (manifests / "sub").mkdir()
+    (manifests / "sub" / "car.xml").write_text("<manifest/>")
+    (manifests / "README").write_text("x")
+    _git(manifests, "add", ".")
+    _git(manifests, "commit", "-q", "-m", "more")
+    _git(manifests, "checkout", "-q", "-b", "default")  # repo's own branch: hidden
+    # a remote-tracking branch, as after `git fetch`
+    _git(manifests, "update-ref", "refs/remotes/origin/android-15", "other")
+    _git(manifests, "update-ref", "refs/remotes/origin/HEAD", "other")
+
+    assert manifest_branches(fake_tree) == ["android-15", "android-16.0.0_r1", "other"]
+    assert manifest_files(fake_tree, "android-15") == ["default.xml", "sub/car.xml"]
+    assert manifest_files(fake_tree, "android-16.0.0_r1") == ["default.xml"]
+    assert manifest_files(fake_tree, "no-such-branch") is None
+    # an unreachable server is reported, not raised
+    _git(manifests, "remote", "add", "origin", str(tmp_path / "missing.git"))
+    assert "missing.git" in fetch_manifests(fake_tree)
+
+
+_FAKE_REPO_CMD = """#!/bin/sh
+echo "ran: $*" >> "$LOG"
+[ "$1" = init ] && [ -n "$FAIL_INIT" ] && { echo "fatal: bad branch"; exit 1; }
+exit 0
+"""
+
+
+@pytest.mark.parametrize("fail_init", [False, True])
+def test_switch_manifest_inits_then_syncs_unless_init_fails(tmp_path, monkeypatch, fail_init):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "repo").write_text(_FAKE_REPO_CMD)
+    (bin_dir / "repo").chmod(0o755)
+    log = tmp_path / "log"
+    monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
+    monkeypatch.setenv("LOG", str(log))
+    if fail_init:
+        monkeypatch.setenv("FAIL_INIT", "1")
+    output = []
+
+    async def on_output(line):
+        output.append(line)
+
+    rc = asyncio.run(switch_manifest(tmp_path, "android-15", "car.xml", on_output, jobs=4))
+    ran = log.read_text().splitlines()
+    if fail_init:
+        assert rc == 1
+        assert ran == ["ran: init -b android-15 -m car.xml"]
+        assert output[-1].startswith("error: repo init failed")
+    else:
+        assert rc == 0
+        assert ran == [
+            "ran: init -b android-15 -m car.xml",
+            "ran: sync --current-branch -j4",
+        ]

@@ -39,6 +39,7 @@ HELP_SECTIONS = [
         ("space c", "checkout — switch to an existing local branch"),
         ("space x", "discard changes — revert to HEAD + delete untracked (asks y/N)"),
         ("space f", "repo forall — run a shell command across projects"),
+        ("space M", "switch the tree's manifest branch/file (repo init -b -m + sync all)"),
         ("esc / space", "close the panel without doing anything"),
     ]),
 ]

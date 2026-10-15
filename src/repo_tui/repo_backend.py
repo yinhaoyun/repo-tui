@@ -46,17 +46,55 @@ def find_repo_root(start: Optional[Path] = None) -> Path:
 
 
 def _read_manifest_xml(repo_root: Path) -> ET.Element:
+    """.repo/manifest.xml with its <include>s inlined. Older repo makes it a
+    symlink to the chosen manifest; newer repo writes a stub that just
+    <include>s it, which on its own lists no projects."""
     manifest_path = repo_root / ".repo" / "manifest.xml"
-    return ET.parse(manifest_path).getroot()
+    root = ET.parse(manifest_path).getroot()
+    _inline_includes(root, repo_root / ".repo" / "manifests", depth=0)
+    return root
+
+
+def _inline_includes(root: ET.Element, manifests_dir: Path, depth: int) -> None:
+    for include in root.findall("include"):
+        root.remove(include)
+        name = include.get("name", "")
+        if not name or depth > 8:
+            continue
+        try:
+            included = ET.parse(manifests_dir / name).getroot()
+        except (OSError, ET.ParseError):
+            continue
+        _inline_includes(included, manifests_dir, depth + 1)
+        root.extend(list(included))
 
 
 def load_tree_info(repo_root: Path) -> TreeInfo:
     info = TreeInfo(root=repo_root)
-    manifest_link = repo_root / ".repo" / "manifest.xml"
-    if manifest_link.is_symlink():
-        info.manifest_name = manifest_link.resolve().name
+    info.manifest_name = current_manifest_file(repo_root)
     info.manifest_branch = _manifest_branch(repo_root)
     return info
+
+
+def current_manifest_file(repo_root: Path) -> str:
+    """The manifest file `repo init -m` picked, relative to .repo/manifests
+    (e.g. "default.xml"), or "" if it can't be told."""
+    manifest_path = repo_root / ".repo" / "manifest.xml"
+    manifests_dir = repo_root / ".repo" / "manifests"
+    if manifest_path.is_symlink():
+        target = manifest_path.resolve()
+        try:
+            return str(target.relative_to(manifests_dir.resolve()))
+        except ValueError:
+            return target.name
+    try:
+        root = ET.parse(manifest_path).getroot()
+    except (OSError, ET.ParseError):
+        return ""
+    includes = root.findall("include")
+    if len(includes) == 1 and root.find("project") is None:
+        return includes[0].get("name", "")
+    return ""
 
 
 def _manifest_branch(repo_root: Path) -> str:
@@ -65,7 +103,13 @@ def _manifest_branch(repo_root: Path) -> str:
         try:
             out = _run_git_capture(manifests_git, ["symbolic-ref", "--short", "HEAD"])
             if out:
-                return out.strip()
+                local = out.strip()
+                # repo checks the manifest out on a local branch named
+                # "default" that tracks the branch given to `repo init -b`.
+                merge = _run_git_capture(
+                    manifests_git, ["config", "--get", f"branch.{local}.merge"]
+                ).strip()
+                return _strip_heads(merge) or local
         except Exception:
             pass
     try:
@@ -90,6 +134,126 @@ def _run_git_capture(cwd: Path, args: list[str]) -> str:
         timeout=10,
     )
     return result.stdout
+
+
+def _strip_heads(ref: str) -> str:
+    return ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
+
+
+# -- switching the tree to another manifest branch / file -------------------
+
+
+def fetch_manifests(repo_root: Path) -> str:
+    """`git fetch` the manifest repo so its branch list is current. Returns
+    "" on success, or what went wrong (the cached list still works)."""
+    import subprocess
+
+    manifests = repo_root / ".repo" / "manifests"
+    if not manifests.is_dir():
+        return f"{manifests} doesn't exist"
+    try:
+        result = subprocess.run(
+            ["git", "fetch", "--quiet", "--prune"],
+            cwd=manifests,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=60,
+            check=False,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+    except subprocess.TimeoutExpired:
+        return "git fetch timed out after 60s"
+    except OSError as exc:
+        return str(exc)
+    if result.returncode != 0:
+        lines = [line.strip() for line in result.stderr.splitlines() if line.strip()]
+        reasons = [line for line in lines if line.startswith(("fatal:", "error:"))]
+        return " ".join(reasons or lines) or f"git fetch exited with {result.returncode}"
+    return ""
+
+
+def manifest_branches(repo_root: Path) -> list[str]:
+    """Branches of the manifest repo (remote-tracking ones, plus any local
+    ones other than repo's own "default"), sorted."""
+    manifests = repo_root / ".repo" / "manifests"
+    try:
+        out = _run_git_capture(
+            manifests,
+            ["for-each-ref", "--format=%(refname)", "refs/remotes/", "refs/heads/"],
+        )
+    except Exception:
+        return []
+    names = set()
+    for ref in out.split():
+        if ref.startswith("refs/remotes/"):
+            # refs/remotes/<remote>/<branch...>
+            parts = ref.split("/", 3)
+            if len(parts) == 4 and parts[3] != "HEAD":
+                names.add(parts[3])
+        elif ref.startswith("refs/heads/") and ref != "refs/heads/default":
+            names.add(_strip_heads(ref))
+    return sorted(names)
+
+
+def _manifest_ref(repo_root: Path, branch: str) -> str:
+    """The manifest repo ref that `branch` names, or "" if it isn't known
+    locally (it may still exist on the server: repo init fetches)."""
+    manifests = repo_root / ".repo" / "manifests"
+    for ref in (f"refs/remotes/origin/{branch}", f"refs/heads/{branch}", branch):
+        try:
+            out = _run_git_capture(
+                manifests, ["rev-parse", "--verify", "-q", f"{ref}^{{commit}}"]
+            )
+        except Exception:
+            return ""
+        if out.strip():
+            return ref
+    return ""
+
+
+def manifest_files(repo_root: Path, branch: str) -> Optional[list[str]]:
+    """The manifest (*.xml) files on `branch` of the manifest repo, or None
+    when the branch isn't known locally."""
+    ref = _manifest_ref(repo_root, branch)
+    if not ref:
+        return None
+    out = _run_git_capture(
+        repo_root / ".repo" / "manifests", ["ls-tree", "-r", "--name-only", ref]
+    )
+    return sorted(name for name in out.splitlines() if name.endswith(".xml"))
+
+
+def init_args(branch: str, manifest: str) -> list[str]:
+    """argv for `repo init` re-run inside an existing tree: it keeps the
+    manifest URL and other init options and only changes branch/file."""
+    return ["repo", "init", "-b", branch, "-m", manifest]
+
+
+async def switch_manifest(
+    repo_root: Path,
+    branch: str,
+    manifest: str,
+    on_output: Optional[OutputCallback] = None,
+    on_progress: Optional[OutputCallback] = None,
+    jobs: Optional[int] = None,
+) -> int:
+    """`repo init -b <branch> -m <manifest>`, then `repo sync` the whole
+    tree onto it. The sync is skipped if init fails."""
+
+    async def say(line: str) -> None:
+        if on_output is not None:
+            await on_output(line)
+
+    await say("$ " + " ".join(init_args(branch, manifest)))
+    returncode = await _stream_subprocess_tty(
+        repo_root, init_args(branch, manifest), on_output, on_progress
+    )
+    if returncode != 0:
+        await say(f"error: repo init failed (exit {returncode}); repo sync was not run")
+        return returncode
+    await say("$ " + " ".join(sync_args(jobs=jobs)))
+    return await _stream_subprocess_tty(repo_root, sync_args(jobs=jobs), on_output, on_progress)
 
 
 def load_projects(repo_root: Path) -> list[Project]:

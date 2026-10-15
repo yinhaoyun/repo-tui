@@ -175,7 +175,7 @@ uv manages it, and `which repo-tui` shows where the command lives.
   press Enter (or click) to see its full diff.
 - **Bottom bar**: the always-on keys, none of which can change a checkout.
   Press `Space` to open the action panel — a box listing every key that
-  does (sync, detach, branch, checkout, discard, forall), grouped into "this project" and
+  does (sync, detach, branch, checkout, discard, forall, switch manifest), grouped into "this project" and
   "whole tree", with the target project in its title. It stays open until
   you press an action key (runs it, then closes), or `Esc`/`Space` to exit.
   Right-clicking a project row opens the per-project actions as a menu.
@@ -213,6 +213,7 @@ right after `repo sync` — is *not* treated as changed on its own.
 | `Space` then `c` | `repo checkout <branch>` — switch to an existing local branch (pick from a list, or type one) |
 | `Space` then `x` | discard the selected project's changes so its Stat is clean: tracked changes revert to HEAD, untracked files are deleted; files hidden by your ignore rules, commits and the branch are kept (asks y/N first) |
 | `Space` then `f` | `repo forall -c <command>` across the tree (prompts for the command) |
+| `Space` then `M` | switch the whole tree to another manifest branch and/or manifest file: `repo init -b <branch> -m <file>`, then `repo sync` everything (see below) |
 | `Esc` / `Space` (in the panel) | close the action panel without doing anything |
 
 The keys follow two rules:
@@ -239,6 +240,35 @@ current project, jobs running) and the output tail. Sync runs with
 [sync]
 jobs = 4
 ```
+
+## Switching manifest branch / file (`Space M`)
+
+`Space M` moves the whole tree to another manifest branch, another manifest
+file, or both — what you'd otherwise do with `repo init -b … -m …` followed
+by `repo sync`. repo-tui:
+
+1. fetches the manifest repo (`.repo/manifests`) so the branch list is
+   current, and rescans every project's status;
+2. asks for the branch (type to filter the list, or type a name that isn't
+   listed), then for the manifest file on that branch (the `.xml` files
+   found there; the current branch and file are listed first and marked);
+3. shows a y/N confirmation with the from → to, the exact commands, and a
+   **Check before you go on** list of anything risky: the fetch failed (the
+   list may be stale), the branch or file wasn't found, `repo` isn't on
+   `PATH`, it's the same as now, and which projects have uncommitted changes,
+   unpushed commits, sit on a local branch, or couldn't be scanned;
+4. runs `repo init -b <branch> -m <file>` (it keeps the manifest URL and your
+   other init options) and, only if that succeeds, `repo sync -jN` on the
+   whole tree, behind the usual progress dialog;
+5. re-reads the manifest, so the project list, header and counts reflect the
+   new manifest, and opens the output with any errors/warnings pulled to the
+   top: e.g. init failing, projects that failed to sync, and projects the new
+   manifest drops but that are still on disk. The output also lists which
+   projects were added and removed, and the sync report (`u`) shows which
+   projects moved to which commit.
+
+Names starting with `-` or containing spaces are refused before anything
+runs.
 
 ## Settings (`o`)
 

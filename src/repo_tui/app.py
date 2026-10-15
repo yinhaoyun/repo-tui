@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import shutil
 import time
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from .widgets.diff_screen import DiffScreen
 from .widgets.header_bar import HeaderBar
 from .widgets.help_modal import HelpModal
 from .widgets.keybar import KeyBar
+from .widgets.picker_modal import PickerModal
 from .widgets.project_list import ProjectContextMenuRequested, ProjectHighlighted, ProjectList
 from .widgets.prompt_modal import PromptModal
 from .widgets.result_screen import ResultScreen
@@ -305,6 +307,7 @@ class RepoTuiApp(App):
         jobs: int | None = None,
         project: Project | None = None,
         track_updates: bool = False,
+        reload_tree: bool = False,
     ) -> None:
         """Run a repo command behind a blocking BusyModal, refresh status,
         then show the command's output in a ResultScreen that pulls out any
@@ -313,7 +316,9 @@ class RepoTuiApp(App):
         `command`/`jobs` are only shown in the dialog. With `project`, only
         that project is re-scanned afterwards. With `track_updates` (sync,
         detach), each project's HEAD is recorded before and compared after,
-        and what moved becomes the new sync report."""
+        and what moved becomes the new sync report. With `reload_tree`
+        (manifest switch), the project list is re-read from the manifest
+        before the rescan."""
         header = self.query_one("#header", HeaderBar)
         header.set_syncing(True)
         busy = BusyModal(title, command=command, jobs=jobs)
@@ -344,6 +349,8 @@ class RepoTuiApp(App):
                 returncode = None
             if track_updates:
                 report = await self._compare_commits(busy, title, returncode, targets, before)
+            if reload_tree:
+                log_lines += self._reload_tree()
             await self._refresh(busy, only=[project] if project else None)
         finally:
             header.set_syncing(False)
@@ -381,6 +388,33 @@ class RepoTuiApp(App):
         self.sync_report = report
         self.query_one("#header", HeaderBar).set_report(report)
         return report
+
+    def _reload_tree(self) -> list[str]:
+        """Re-read the manifest after it changed: header info and the
+        project list. Returns lines saying what changed, for the output."""
+        old_paths = {p.path for p in self.projects}
+        self.tree_info = repo_backend.load_tree_info(self.repo_root)
+        self.query_one("#header", HeaderBar).set_tree_info(self.tree_info)
+        self.projects = repo_backend.load_projects(self.repo_root)
+        self.tree_info.total_projects = len(self.projects)
+        new_paths = {p.path for p in self.projects}
+        added, removed = new_paths - old_paths, old_paths - new_paths
+        lines = [
+            f"repo-tui: now on manifest {self.tree_info.manifest_branch or '?'}"
+            f" / {self.tree_info.manifest_name or '?'}, {len(self.projects)} projects"
+            f" ({len(added)} added, {len(removed)} removed)"
+        ]
+        lines += [f"  + {path}" for path in sorted(added)]
+        lines += [f"  - {path}" for path in sorted(removed)]
+        leftover = sorted(path for path in removed if (self.repo_root / path / ".git").exists())
+        if leftover:
+            lines.append(
+                f"warning: {len(leftover)} project(s) are no longer in the manifest but "
+                "are still on disk (repo keeps checkouts with local changes): "
+                + ", ".join(leftover[:10])
+                + (" …" if len(leftover) > 10 else "")
+            )
+        return lines
 
     def action_show_sync_report(self) -> None:
         if self.sync_report is None:
@@ -648,6 +682,212 @@ class RepoTuiApp(App):
         if project is not None:
             self._detach_project(project)
 
+    # -- switch manifest branch / file (whole tree) ----------------------
+
+    def action_switch_manifest(self) -> None:
+        self.run_worker(self._prepare_switch_manifest(), exclusive=True, group="manifest")
+
+    async def _prepare_switch_manifest(self) -> None:
+        """Fetch the manifest repo's branches and rescan status first, so
+        the choices and the warnings before the switch are current."""
+        busy = BusyModal("Switch manifest", show_log=False)
+        await self.push_screen(busy)
+        try:
+            busy.set_phase("Fetching manifest branches…")
+            fetch_error = await asyncio.to_thread(repo_backend.fetch_manifests, self.repo_root)
+            branches = await asyncio.to_thread(repo_backend.manifest_branches, self.repo_root)
+            await self._refresh(busy)
+        finally:
+            await busy.dismiss()
+        if fetch_error:
+            self.notify(
+                escape(fetch_error),
+                title="Couldn't fetch the manifest repo — branch list may be out of date",
+                severity="warning",
+                timeout=10,
+            )
+        current = self.tree_info.manifest_branch
+
+        def handle(branch: str | None) -> None:
+            if branch:
+                self.run_worker(
+                    self._pick_manifest_file(branch, branches, fetch_error),
+                    exclusive=True,
+                    group="manifest",
+                )
+
+        self.push_screen(
+            PickerModal(
+                "[b]Switch manifest[/] — step 1/2: manifest branch "
+                f"[dim](now: {escape(current or '?')})[/]",
+                branches,
+                current,
+                "filter, or type a branch name",
+            ),
+            handle,
+        )
+
+    async def _pick_manifest_file(
+        self, branch: str, branches: list[str], fetch_error: str
+    ) -> None:
+        problem = _bad_name(branch, "Branch")
+        if problem:
+            self.notify(problem, severity="error", timeout=8)
+            return
+        files = await asyncio.to_thread(repo_backend.manifest_files, self.repo_root, branch)
+        current = self.tree_info.manifest_name
+        title = (
+            f"[b]Switch manifest[/] — step 2/2: manifest file on [b]{escape(branch)}[/] "
+            f"[dim](now: {escape(current or '?')})[/]"
+        )
+        if files is None:
+            title += (
+                "\n[b $text-warning]This branch isn't in the local copy of the manifest "
+                "repo, so its files can't be listed — type the file name.[/]"
+            )
+        elif not files:
+            title += "\n[b $text-warning]No .xml files found on this branch.[/]"
+
+        def handle(manifest: str | None) -> None:
+            if manifest:
+                self._confirm_switch_manifest(
+                    branch, manifest, branches, files, fetch_error
+                )
+
+        self.push_screen(
+            PickerModal(title, files or [], current, "filter, or type a file name"),
+            handle,
+        )
+
+    def _manifest_switch_warnings(
+        self,
+        branch: str,
+        manifest: str,
+        branches: list[str],
+        files: list[str] | None,
+        fetch_error: str,
+    ) -> list[str]:
+        """Everything worth knowing before switching, as markup lines:
+        errors (it will fail) in red, warnings (it may hurt) in yellow."""
+        err, warn = "[b red]✗[/] ", "[b yellow]![/] "
+        out = []
+        if shutil.which("repo") is None:
+            out.append(err + "[b red]`repo` isn't on PATH — this will fail.[/]")
+        if fetch_error:
+            out.append(
+                warn + "Couldn't fetch the manifest repo, so the lists may be out of date: "
+                + f"[dim]{escape(fetch_error)}[/]"
+            )
+        if branch not in branches:
+            out.append(
+                warn + f"Branch [b]{escape(branch)}[/] isn't among the known manifest "
+                "branches; repo init will fail if the server doesn't have it either."
+            )
+        if files is not None and manifest not in files:
+            out.append(
+                warn + f"[b]{escape(manifest)}[/] doesn't exist on {escape(branch)}; "
+                "repo init will fail."
+            )
+        if not manifest.endswith(".xml"):
+            out.append(warn + f"[b]{escape(manifest)}[/] doesn't end in .xml.")
+        info = self.tree_info
+        if branch == info.manifest_branch and manifest == info.manifest_name:
+            out.append(
+                warn + "That is the current branch and file; this just re-runs "
+                "repo init and syncs the whole tree."
+            )
+
+        def listed(projects: list[Project], what: str, detail) -> None:
+            if not projects:
+                return
+            names = ", ".join(escape(detail(p)) for p in projects[:6])
+            more = f" …and {len(projects) - 6} more" if len(projects) > 6 else ""
+            out.append(warn + f"{len(projects)} project(s) {what}: [dim]{names}{more}[/]")
+
+        listed(
+            [p for p in self.projects if p.error],
+            "couldn't be scanned",
+            lambda p: p.path,
+        )
+        listed(
+            [p for p in self.projects if p.has_visible_changes],
+            "have uncommitted changes — repo sync can fail on them or leave them "
+            "on the old revision",
+            lambda p: p.path,
+        )
+        listed(
+            [p for p in self.projects if p.ahead],
+            "have unpushed commits — they may be rebased onto the new revision",
+            lambda p: f"{p.path} ↑{p.ahead}",
+        )
+        listed(
+            [p for p in self.projects if p.current_branch and not p.is_detached],
+            "are on a local branch — repo sync keeps them on it, not on the new "
+            "manifest revision",
+            lambda p: f"{p.path} ({p.current_branch})",
+        )
+        return out
+
+    def _confirm_switch_manifest(
+        self,
+        branch: str,
+        manifest: str,
+        branches: list[str],
+        files: list[str] | None,
+        fetch_error: str,
+    ) -> None:
+        problem = _bad_name(manifest, "Manifest file")
+        if problem:
+            self.notify(problem, severity="error", timeout=8)
+            return
+        info = self.tree_info
+        init_cmd = " ".join(repo_backend.init_args(branch, manifest))
+        sync_cmd = " ".join(repo_backend.sync_args(jobs=self.config.sync_jobs))
+        warnings = self._manifest_switch_warnings(branch, manifest, branches, files, fetch_error)
+        body = (
+            f"[dim]from[/] {escape(info.manifest_branch or '?')} / "
+            f"{escape(info.manifest_name or '?')}\n"
+            f"[dim]to  [/] [b]{escape(branch)}[/] / [b]{escape(manifest)}[/]\n\n"
+            f"[dim]$ {escape(init_cmd)}\n$ {escape(sync_cmd)}[/]\n"
+            "Every project is synced to the new manifest; projects it drops are "
+            "removed (repo keeps ones with local changes)."
+        )
+        if warnings:
+            body += "\n\n[b u]Check before you go on[/]\n" + "\n".join(warnings)
+
+        def handle(confirmed: bool | None) -> None:
+            if confirmed:
+                self._start_switch_manifest(branch, manifest)
+
+        self.push_screen(
+            ConfirmModal(f"Switch the whole tree to {escape(branch)} / {escape(manifest)}?", body),
+            handle,
+        )
+
+    def _start_switch_manifest(self, branch: str, manifest: str) -> None:
+        jobs = self.config.sync_jobs
+        self.run_worker(
+            self._run_and_refresh(
+                f"switch manifest: {branch} / {manifest}",
+                lambda on_output, on_progress: repo_backend.switch_manifest(
+                    self.repo_root,
+                    branch,
+                    manifest,
+                    on_output=on_output,
+                    on_progress=on_progress,
+                    jobs=jobs,
+                ),
+                command=" ".join(repo_backend.init_args(branch, manifest))
+                + " && "
+                + " ".join(repo_backend.sync_args(jobs=jobs)),
+                jobs=jobs,
+                track_updates=True,
+                reload_tree=True,
+            ),
+            exclusive=True,
+            group="sync",
+        )
+
     def action_forall(self) -> None:
         def handle(command: str | None) -> None:
             if not command:
@@ -687,3 +927,12 @@ class RepoTuiApp(App):
         project = self._selected_project()
         if project is not None:
             self._copy_project_path(project)
+
+
+def _bad_name(value: str, what: str) -> str:
+    """Why `value` can't be a branch/file name passed to repo init, or ""."""
+    if value.startswith("-"):
+        return f"{what} can't start with '-': {escape(value)}"
+    if any(ch.isspace() for ch in value):
+        return f"{what} can't contain spaces: {escape(value)}"
+    return ""

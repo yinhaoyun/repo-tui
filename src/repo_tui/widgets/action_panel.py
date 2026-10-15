@@ -14,7 +14,7 @@ from ..hints import key, tip
 
 # (key, action id, label) — split by what the action touches. Every action
 # here changes a checkout; lowercase keys act on the selected project, Shift
-# on the whole tree (s/S), matching r/R on the top layer.
+# on the whole tree (s/S, M), matching r/R on the top layer.
 PROJECT_ACTIONS = [
     ("s", "sync_selected", "sync"),
     ("d", "detach", "detach (sync -d -l)"),
@@ -25,6 +25,7 @@ PROJECT_ACTIONS = [
 TREE_ACTIONS = [
     ("S", "sync_all", "sync all"),
     ("f", "forall", "forall <cmd>"),
+    ("M", "switch_manifest", "switch manifest…"),
 ]
 ACTION_KEYS = {key: action for key, action, _ in PROJECT_ACTIONS + TREE_ACTIONS}
 EXIT_KEYS = {"escape", "space"}

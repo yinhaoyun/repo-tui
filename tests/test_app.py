@@ -17,6 +17,7 @@ from repo_tui.widgets.diff_screen import DiffScreen
 from repo_tui.widgets.result_screen import ResultScreen
 from repo_tui.widgets.settings_screen import SettingsScreen
 from repo_tui.widgets.help_modal import HelpModal
+from repo_tui.widgets.picker_modal import PickerModal
 from repo_tui.widgets.project_list import ProjectList
 from repo_tui.widgets.prompt_modal import PromptModal
 
@@ -1023,5 +1024,95 @@ def test_clicking_changed_count_explains_and_jumps_to_project(dirty_tree):
             await pilot.pause()
             assert not isinstance(app.screen_stack[-1], ChangedScreen)
             assert app._selected_project().path == "frameworks/base"
+
+    asyncio.run(scenario())
+
+
+def test_switch_manifest_warns_first_then_inits_syncs_and_reloads(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        calls, notes = [], []
+
+        async def fake_switch(repo_root, branch, manifest, on_output=None, **kwargs):
+            calls.append((branch, manifest))
+            await on_output("warning: build/make has local changes, not removing")
+            # the new manifest drops build/make, but repo left it on disk
+            (repo_root / ".repo" / "project.list").write_text("frameworks/base\n")
+            return 0
+
+        monkeypatch.setattr(
+            repo_backend, "fetch_manifests", lambda root: "fatal: could not read from remote"
+        )
+        monkeypatch.setattr(repo_backend, "switch_manifest", fake_switch)
+        monkeypatch.setattr(app, "notify", lambda message, **kw: notes.append((message, kw)))
+
+        async with app.run_test(size=(120, 50)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("space", "M")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            # the failed fetch is reported, and the picker still opens
+            assert any(kw.get("severity") == "warning" for _, kw in notes)
+            assert isinstance(app.screen_stack[-1], PickerModal)
+            await pilot.press(*"release-2", "enter")  # not listed: used as typed
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert isinstance(app.screen_stack[-1], PickerModal)
+            await pilot.press(*"car.xml", "enter")
+            await pilot.pause()
+
+            confirm = app.screen_stack[-1]
+            assert isinstance(confirm, ConfirmModal)
+            body = str(confirm.query_one("#confirm-body").render())
+            assert "repo init -b release-2 -m car.xml" in body
+            assert "Couldn't fetch the manifest repo" in body
+            assert "isn't among the known manifest branches" in body
+            assert "uncommitted changes" in body and "frameworks/base" in body
+            assert calls == []  # nothing runs before y
+
+            await pilot.press("y")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert calls == [("release-2", "car.xml")]
+            assert [p.path for p in app.projects] == ["frameworks/base"]
+            result = app.screen_stack[-1]
+            assert isinstance(result, ResultScreen)
+            assert result.severity == "warning"
+            problems = [line for _, line in result.problem_lines]
+            assert any("not removing" in line for line in problems)
+            assert any("still on disk" in line and "build/make" in line for line in problems)
+
+    asyncio.run(scenario())
+
+
+def test_switch_manifest_refuses_option_like_names(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        notes = []
+        monkeypatch.setattr(repo_backend, "fetch_manifests", lambda root: "")
+        monkeypatch.setattr(app, "notify", lambda message, **kw: notes.append((message, kw)))
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("space", "M")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.press(*"--foo", "enter")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert len(app.screen_stack) == 1
+            assert notes and notes[-1][1]["severity"] == "error"
+            assert "can't start with '-'" in notes[-1][0]
 
     asyncio.run(scenario())

@@ -197,7 +197,36 @@ ContextMenu {
     padding-bottom: 1;
 }
 
-#menu-keys, #prompt-keys {
+PickerModal {
+    align: center middle;
+}
+
+#picker-box {
+    width: 70;
+    max-width: 100%;
+    height: auto;
+    max-height: 90%;
+    background: $panel;
+    border: round $primary;
+    padding: 1 2;
+}
+
+#picker-title {
+    height: auto;
+    padding-bottom: 1;
+}
+
+#picker-list {
+    height: auto;
+    max-height: 16;
+}
+
+#confirm-body {
+    max-height: 30;
+    overflow-y: auto;
+}
+
+#menu-keys, #prompt-keys, #picker-keys {
     height: auto;
     padding-top: 1;
 }
