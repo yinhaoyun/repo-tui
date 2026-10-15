@@ -27,6 +27,7 @@ PROJECT_ACTIONS = [
     ("b", "start_branch", "start new branch"),
     ("c", "switch_branch", "checkout branch"),
     ("x", "discard", "discard changes…"),
+    ("h", "unshallow", "unshallow (full history)…"),
 ]
 TREE_ACTIONS = [
     ("S", "sync_all", "sync all"),

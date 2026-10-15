@@ -260,16 +260,21 @@ def load_projects(repo_root: Path) -> list[Project]:
     """Build the project list with manifest-derived fields (no git status yet)."""
     revisions_by_path: dict[str, str] = {}
     names_by_path: dict[str, str] = {}
+    remotes_by_path: dict[str, str] = {}
+    depths_by_path: dict[str, str] = {}
     try:
         root = _read_manifest_xml(repo_root)
         default = root.find("default")
         default_revision = default.get("revision", "") if default is not None else ""
+        default_remote = default.get("remote", "") if default is not None else ""
         for proj in root.findall("project"):
             path = proj.get("path") or proj.get("name", "")
             name = proj.get("name", path)
             revision = proj.get("revision", default_revision)
             revisions_by_path[path] = revision
             names_by_path[path] = name
+            remotes_by_path[path] = proj.get("remote", default_remote)
+            depths_by_path[path] = proj.get("clone-depth", "")
     except (FileNotFoundError, ET.ParseError):
         pass
 
@@ -295,6 +300,8 @@ def load_projects(repo_root: Path) -> list[Project]:
                 name=names_by_path.get(path, path),
                 abs_path=abs_path,
                 manifest_revision=revisions_by_path.get(path, ""),
+                remote=remotes_by_path.get(path, ""),
+                clone_depth=depths_by_path.get(path, ""),
             )
         )
     return projects
@@ -324,6 +331,7 @@ async def _stream_subprocess_tty(
     args: list[str],
     on_output: Optional[OutputCallback],
     on_progress: Optional[OutputCallback],
+    env: Optional[dict[str, str]] = None,
 ) -> int:
     """Like _stream_subprocess, but runs the command on a pseudo-terminal.
 
@@ -345,6 +353,7 @@ async def _stream_subprocess_tty(
             stdout=slave,
             stderr=slave,
             start_new_session=True,
+            env=env,
         )
     finally:
         os.close(slave)
@@ -455,3 +464,35 @@ async def sync_detach(
     return await _stream_subprocess_tty(
         repo_root, sync_args(paths, jobs, detach=True), on_output, on_progress
     )
+
+
+def unshallow_args(remote: str) -> list[str]:
+    return ["git", "fetch", "--unshallow", "--progress", remote]
+
+
+async def unshallow(
+    project: Project,
+    remote: str,
+    on_output: Optional[OutputCallback] = None,
+    on_progress: Optional[OutputCallback] = None,
+) -> int:
+    """`git fetch --unshallow <remote>` in one project: fetch its full
+    history. git's "Receiving objects: 45% (…)" line is the live progress.
+    Never prompts (no terminal, GIT_TERMINAL_PROMPT=0): a server that needs
+    credentials fails with git's message instead."""
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    return await _stream_subprocess_tty(
+        project.abs_path, unshallow_args(remote), on_output, on_progress, env=env
+    )
+
+
+def init_depth(repo_root: Path) -> str:
+    """The --depth given to `repo init`, if any ("" otherwise): repo sync
+    keeps fetching shallow to that depth."""
+    try:
+        return _run_git_capture(
+            repo_root / ".repo" / "manifests",
+            ["config", "--get", "repo.depth"],
+        ).strip()
+    except Exception:
+        return ""

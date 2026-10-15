@@ -566,6 +566,11 @@ class RepoTuiApp(App):
 
         async def show() -> None:
             text = await asyncio.to_thread(git_backend.file_log, project, file.path)
+            if text and project.is_shallow:
+                text += (
+                    "\n(shallow clone: older history isn't here. "
+                    "Space h in the project list fetches it.)"
+                )
             self.push_screen(
                 DiffScreen(
                     f"history: {project.path}/{file.path}",
@@ -1038,6 +1043,63 @@ class RepoTuiApp(App):
             handle,
         )
 
+    def _unshallow_project(self, project: Project) -> None:
+        """Fetch one project's full history, after a y/N that says what it
+        costs and when a later sync could undo it."""
+        if project.error:
+            self.notify(
+                f"{escape(project.path)} couldn't be scanned: {escape(project.error)}",
+                severity="error",
+                timeout=8,
+            )
+            return
+        if not project.is_shallow:
+            self.notify(f"{escape(project.path)} already has its full history.", timeout=4)
+            return
+        remote, why = git_backend.fetch_remote(project)
+        if why:
+            self.notify(escape(why), title="Can't unshallow", severity="error", timeout=10)
+            return
+        command = " ".join(repo_backend.unshallow_args(remote))
+        reshallow = []
+        if project.clone_depth:
+            reshallow.append(f"the manifest sets clone-depth=\"{escape(project.clone_depth)}\"")
+        depth = repo_backend.init_depth(self.repo_root)
+        if depth:
+            reshallow.append(f"this tree was set up with repo init --depth={escape(depth)}")
+        body = (
+            f"Fetches all of {escape(project.path)}'s history from "
+            f"[b]{escape(remote)}[/]. Nothing in the working tree changes.\n"
+            f"[dim]$ {escape(command)}[/]\n\n"
+            "[b yellow]![/] This can be a big download (gigabytes for large "
+            "projects) and take a while; it needs network access to the server."
+        )
+        if reshallow:
+            body += (
+                f"\n[b yellow]![/] {' and '.join(reshallow)}, so a later repo sync "
+                "may fetch it shallow again."
+            )
+
+        def handle(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            self.run_worker(
+                self._run_and_refresh(
+                    f"unshallow: {project.path}",
+                    lambda on_output, on_progress: repo_backend.unshallow(
+                        project, remote, on_output=on_output, on_progress=on_progress
+                    ),
+                    command=command,
+                    project=project,
+                ),
+                exclusive=True,
+                group="sync",
+            )
+
+        self.push_screen(
+            ConfirmModal(f"Unshallow {escape(project.path)}?", body), handle
+        )
+
     def _copy_project_path(self, project: Project) -> None:
         self._copy_text(str(project.abs_path), "Project path")
 
@@ -1058,6 +1120,8 @@ class RepoTuiApp(App):
             ("discard", "Discard changes…"),
             ("copy", "Copy path"),
         ]
+        if project.is_shallow:
+            options.insert(-1, ("unshallow", "Unshallow (fetch full history)…"))
 
         def handle(choice: str | None) -> None:
             if choice == "refresh":
@@ -1074,6 +1138,8 @@ class RepoTuiApp(App):
                 self._discard_changes(project)
             elif choice == "copy":
                 self._copy_project_path(project)
+            elif choice == "unshallow":
+                self._unshallow_project(project)
 
         self.push_screen(ContextMenu(project.path, options), handle)
 
@@ -1347,6 +1413,11 @@ class RepoTuiApp(App):
         project = self._selected_project()
         if project is not None:
             self._prompt_switch_branch(project)
+
+    def action_unshallow(self) -> None:
+        project = self._selected_project()
+        if project is not None:
+            self._unshallow_project(project)
 
     def action_discard(self) -> None:
         project = self._selected_project()

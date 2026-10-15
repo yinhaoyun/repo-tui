@@ -118,6 +118,7 @@ def collect_project_status(project: Project, ignore: IgnoreRules) -> Project:
             project.abs_path, ["for-each-ref", "--format=%(refname:short)", "refs/heads/"]
         )
         local_branches = [b for b in branches_out.splitlines() if b.strip()]
+        shallow = _run_git(project.abs_path, ["rev-parse", "--is-shallow-repository"])
 
         project.current_branch = branch
         project.is_detached = detached
@@ -125,6 +126,7 @@ def collect_project_status(project: Project, ignore: IgnoreRules) -> Project:
         project.behind = behind
         project.local_branch_count = len(local_branches)
         project.local_branches = local_branches
+        project.is_shallow = shallow.strip() == "true"
         project.files = files
         project.added = sum(f.added for f in files if not f.ignored)
         project.deleted = sum(f.deleted for f in files if not f.ignored)
@@ -345,3 +347,20 @@ def discard_files(project: Project, files: list[FileStatus]) -> tuple[int, list[
     for i in range(0, len(untracked), _PATHS_PER_CALL):
         run(["clean", "-f", "--", *untracked[i : i + _PATHS_PER_CALL]])
     return returncode, output
+
+
+def fetch_remote(project: Project) -> tuple[str, str]:
+    """(remote to fetch from, "") or ("", why there isn't one): the
+    manifest's remote for the project if the checkout has it, else its only
+    remote."""
+    remotes = _run_git(project.abs_path, ["remote"]).split()
+    if project.remote and project.remote in remotes:
+        return project.remote, ""
+    if len(remotes) == 1:
+        return remotes[0], ""
+    if not remotes:
+        return "", f"{project.path} has no git remote to fetch from"
+    return "", (
+        f"{project.path} has several remotes ({', '.join(remotes)}) and none is "
+        f"the manifest's ({project.remote or 'unknown'})"
+    )

@@ -1539,3 +1539,73 @@ def test_key_bar_focus_line_follows_focus_and_global_line_stays(dirty_tree, monk
 
     asyncio.run(scenario())
     assert "PROJECT" not in global_hint() and "FILE" not in global_hint()
+
+
+def test_unshallow_only_the_selected_project(dirty_tree, tmp_path):
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _git(origin, "init", "-q")
+    for i in range(3):
+        (origin / "f.txt").write_text(f"{i}\n")
+        _git(origin, "add", "f.txt")
+        _git(origin, "commit", "-q", "-m", f"c{i}")
+    for path in ("external/shallow", "external/other"):
+        subprocess.run(
+            ["git", "clone", "-q", "--depth", "1", f"file://{origin}", str(dirty_tree / path)],
+            check=True, capture_output=True,
+        )
+        # repo leaves projects detached on a remote named after the manifest's remote
+        _git(dirty_tree / path, "remote", "rename", "origin", "aosp")
+        _git(dirty_tree / path, "checkout", "-q", "--detach")
+    manifest = dirty_tree / ".repo" / "manifests" / "default.xml"
+    manifest.write_text(manifest.read_text().replace(
+        "</manifest>",
+        '  <project path="external/shallow" name="ext/shallow" clone-depth="1"/>\n'
+        '  <project path="external/other" name="ext/other" clone-depth="1"/>\n</manifest>',
+    ))
+    project_list = dirty_tree / ".repo" / "project.list"
+    project_list.write_text(project_list.read_text() + "external/shallow\nexternal/other\n")
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(160, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("a")
+            await pilot.pause()
+            plist = app.query_one("#project-list", ProjectList)
+            _select_project(plist, "external/shallow")
+            await pilot.pause()
+            project = plist.project_at_cursor()
+            assert project.is_shallow and project.remote == "aosp"
+            summary = str(app.query_one("#project-summary").render())
+            assert "shallow clone" in summary
+
+            await pilot.press("space", "h")
+            await pilot.pause()
+            confirm = app.screen_stack[-1]
+            assert isinstance(confirm, ConfirmModal)
+            body = str(confirm.query_one("#confirm-body").render())
+            assert "git fetch --unshallow --progress aosp" in body
+            assert 'clone-depth="1"' in body and "shallow again" in body
+
+            await pilot.press("y")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert isinstance(app.screen_stack[-1], ResultScreen)
+            assert app.screen_stack[-1].severity == "information"
+            by_path = {p.path: p for p in app.projects}
+            assert not by_path["external/shallow"].is_shallow
+            assert by_path["external/other"].is_shallow  # only the selected one
+            await pilot.press("escape")
+
+            # already full: says so, runs nothing
+            notes = []
+            app.notify = lambda message, **kw: notes.append(message)
+            await pilot.press("space", "h")
+            await pilot.pause()
+            assert len(app.screen_stack) == 1
+            assert "already has its full history" in notes[-1]
+
+    asyncio.run(scenario())

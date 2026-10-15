@@ -210,3 +210,45 @@ def test_failed_file_op_returns_gits_message(tmp_path):
     project = _file_repo(tmp_path)
     rc, lines = git_backend.stage_file(project, FileStatus("missing.txt", "?", "?"))
     assert rc != 0 and any("missing.txt" in line for line in lines)
+
+
+def _shallow_clone(tmp_path, dest):
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _git(origin, "init", "-q")
+    for i in range(3):
+        (origin / "f.txt").write_text(f"{i}\n")
+        _git(origin, "add", "f.txt")
+        _git(origin, "commit", "-q", "-m", f"c{i}")
+    _git(tmp_path, "clone", "-q", "--depth", "1", f"file://{origin}", str(dest))
+    return dest
+
+
+def test_shallow_clone_is_detected_and_unshallowed(tmp_path):
+    import asyncio
+
+    from repo_tui import repo_backend
+    from repo_tui.ignore import IgnoreRules
+
+    dest = _shallow_clone(tmp_path, tmp_path / "proj")
+    project = Project(path="proj", name="proj", abs_path=dest, remote="origin")
+    git_backend.collect_project_status(project, IgnoreRules())
+    assert project.is_shallow
+    assert git_backend.fetch_remote(project) == ("origin", "")
+
+    rc = asyncio.run(repo_backend.unshallow(project, "origin"))
+    assert rc == 0
+    git_backend.collect_project_status(project, IgnoreRules())
+    assert not project.is_shallow
+    assert len(git_backend.file_log(project, "f.txt").splitlines()) == 3
+
+
+def test_fetch_remote_explains_when_there_is_none(tmp_path):
+    project = _file_repo(tmp_path)  # no remotes
+    remote, why = git_backend.fetch_remote(project)
+    assert remote == "" and "no git remote" in why
+    _git(project.abs_path, "remote", "add", "a", "x")
+    _git(project.abs_path, "remote", "add", "b", "y")
+    project.remote = "aosp"
+    remote, why = git_backend.fetch_remote(project)
+    assert remote == "" and "several remotes (a, b)" in why

@@ -45,6 +45,11 @@ class ProjectSummary(Static):
         lines.append(
             f"local branches: {project.local_branch_count}   "
             f"changes: [b]{project.stat_summary}[/]"
+            + (
+                "   [b $text-warning]shallow clone[/] [dim](space h: full history)[/]"
+                if project.is_shallow
+                else ""
+            )
         )
         if project.files:
             lines.append(

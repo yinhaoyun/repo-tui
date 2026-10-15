@@ -42,6 +42,9 @@ class Project:
     abs_path: Path
 
     manifest_revision: str = ""  # branch/revision the manifest pins this project to
+    remote: str = ""  # the manifest's remote for this project (git remote name)
+    is_shallow: bool = False  # a shallow clone (repo init --depth / clone-depth)
+    clone_depth: str = ""  # the manifest's clone-depth for this project, if any
     current_branch: str = ""  # current checked-out branch, or '' if detached
     is_detached: bool = False
 

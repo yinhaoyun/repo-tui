@@ -244,6 +244,7 @@ The `?` help lists them the same way.
 | `Space` then `b` | `repo start <branch>` — create a new branch on the selected project (prompts for a name) |
 | `Space` then `c` | `repo checkout <branch>` — switch to an existing local branch (pick from a list, or type one) |
 | `Space` then `x` | discard the selected project's changes so its Stat is clean: tracked changes revert to HEAD, untracked files are deleted; files hidden by your ignore rules, commits and the branch are kept (asks y/N first) |
+| `Space` then `h` | unshallow the selected project only: `git fetch --unshallow <remote>` to get its full history (asks y/N first; also in the right-click menu of a shallow project) |
 | `Space` then `f` | `repo forall -c <command>` across the tree (prompts for the command) |
 | `Space` then `M` | switch the whole tree to another manifest branch and/or manifest file: `repo init -b <branch> -m <file>`, then `repo sync` everything (see below) |
 | `Esc` / `Space` (in the panel) | close the action panel without doing anything |
@@ -293,6 +294,24 @@ current project, jobs running) and the output tail. Sync runs with
 [sync]
 jobs = 4
 ```
+
+## Unshallowing a project (`Space h`)
+
+Trees set up with `repo init --depth=N` (or projects the manifest gives a
+`clone-depth`) only have recent history. repo-tui spots shallow clones
+during its status scan and says **shallow clone** in the project's detail
+pane; a file's history (`l`) notes when older commits are missing.
+
+`Space h` fetches the full history of **just the selected project** —
+the rest of the tree stays shallow. It asks y/N first, showing the command
+(`git fetch --unshallow --progress <remote>`, using the project's remote
+from the manifest), that it can be a big download, and — when it applies —
+that `repo init --depth` or the project's `clone-depth` means a later
+`repo sync` may make it shallow again. The fetch runs behind the usual
+progress dialog with git's live progress, never prompts for credentials
+(a server that needs them fails with git's message), and its output is
+shown with any errors pulled out. A project that isn't shallow, can't be
+scanned, or has no usable remote gets a message saying so instead.
 
 ## Switching manifest branch / file (`Space M`)
 
