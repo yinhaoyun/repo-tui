@@ -183,6 +183,14 @@ uv manages it, and `which repo-tui` shows where the command lives.
   repo-tui records each affected project's HEAD before every sync, sync
   all and detach, and compares it afterwards, so the report reflects
   exactly that run.
+
+  After a sync or sync all that moved anything and finished without
+  errors/warnings, the report opens by itself in place of the output
+  screen (`o` there shows the output). A sync with problems opens the
+  output first, so they aren't missed; `u` gets to the report. A detach or
+  manifest switch moves commits on purpose (often in every project), so
+  it never opens the report on its own; it is still recorded for `u`.
+  Turn the auto-open off in settings (Sync tab).
 - **Left pane**: one row per project. Unchanged projects are hidden by
   default (press `a` to show everything). Each row shows the branch (plus
   ahead/behind counts) and a rough `+added/-deleted` / `?untracked` stat,
@@ -360,6 +368,7 @@ close with `esc`. Changes apply immediately and are saved to
 | Display | Theme — `←`/`→` steps through them, `enter` opens a filterable list | any Textual theme (`textual-dark` default, `nord`, `gruvbox`, `dracula`, `tokyo-night`, `catppuccin-*`, …), repo-tui's extras, or your own (below) | `[display] theme` |
 | Sync | Sync jobs (`-jN`) for sync, sync all and detach | 1–128 (default: one per CPU) | `[sync] jobs` |
 | Sync | Confirm before sync all — ask y/N before `Space S` | on / off (default) | `[sync] confirm_all` |
+| Sync | Open sync report after sync — after a clean `Space s` / `Space S` that moved commits, show which projects moved instead of the output | on (default) / off | `[sync] show_report` |
 | Behaviour | Status scan workers — parallel `git status` during a refresh | 1–128 (default 16) | `[performance] max_workers` |
 | Behaviour | Sort project list | changed first (default), most changes first, by branch, by path | `[display] sort` (`changed`/`changes`/`branch`/`path`) |
 | Behaviour | Show command output — after a repo command, always open its output, or only when it failed or printed errors/warnings (a toast otherwise) | always (default) / only on errors/warnings | `[behaviour] result_screen` (`always`/`problems`) |

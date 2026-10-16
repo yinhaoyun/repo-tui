@@ -59,6 +59,10 @@ max_workers = 16
 # jobs = 8
 # Ask y/N before `Space S` syncs the whole tree (default: false).
 # confirm_all = true
+# After a clean sync / sync all that moved commits, open the sync report
+# (which projects moved, and what came in) instead of the output (default:
+# true). Detach and manifest switches never open it on their own.
+# show_report = false
 
 [behaviour]
 # After a repo command, open its output screen "always" (default), or only on

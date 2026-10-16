@@ -64,6 +64,7 @@ class Config:
     max_workers: int = 16
     sync_jobs: int = field(default_factory=default_sync_jobs)
     confirm_sync_all: bool = False
+    show_sync_report: bool = True
     sort: str = "changed"
     result_screen: str = "always"
     auto_refresh_minutes: int = 0
@@ -128,6 +129,13 @@ SETTINGS = (
         "confirm_sync_all", "Sync", "Confirm before sync all",
         "Ask y/N before space S syncs the whole tree.",
         "bool", "sync", "confirm_all",
+    ),
+    Setting(
+        "show_sync_report", "Sync", "Open sync report after sync",
+        "After space s / space S, open the list of projects that moved to a "
+        "new commit (when any did and the sync had no errors/warnings). "
+        "Detach and manifest switches never open it; u always does.",
+        "bool", "sync", "show_report",
     ),
     Setting(
         "max_workers", "Behaviour", "Status scan workers",

@@ -2,8 +2,9 @@
 on the left, and for the highlighted one, on the right, old → new commit, a
 diff summary and the commits it brought in (or dropped, after a detach).
 
-Opened by clicking "last sync: N updated" in the header, `Space u`, or `u`
-on the command's result screen."""
+Opened by clicking "last sync: N updated" in the header, `u`, or `u` on
+the command's result screen; also on its own right after a clean sync that
+moved something, in place of the output screen (`o` then shows that)."""
 
 from __future__ import annotations
 
@@ -31,11 +32,21 @@ def report_summary(report: SyncReport) -> str:
 
 
 class SyncReportScreen(ModalScreen[None]):
-    BINDINGS = [("escape", "dismiss_screen", "Close"), ("q", "dismiss_screen", "Close")]
+    BINDINGS = [
+        ("escape", "dismiss_screen", "Close"),
+        ("q", "dismiss_screen", "Close"),
+        ("o", "show_output", "Command output"),
+    ]
 
-    def __init__(self, report: SyncReport, projects: dict[str, Project]) -> None:
+    def __init__(
+        self,
+        report: SyncReport,
+        projects: dict[str, Project],
+        output: ModalScreen | None = None,
+    ) -> None:
         self._report = report
         self._projects = projects
+        self._output = output  # the sync's ResultScreen, when it opened in its place
         super().__init__()
 
     def compose(self):
@@ -51,10 +62,10 @@ class SyncReportScreen(ModalScreen[None]):
                         id="report-list",
                     )
                     yield RichLog(id="report-detail", wrap=False, markup=False)
-                yield Static(
-                    tip(f"{key('↑↓')} pick a project to see its new commits"),
-                    id="report-keys",
-                )
+                keys = f"{key('↑↓')} pick a project to see its new commits"
+                if self._output is not None:
+                    keys += f"   {key('o')} full command output"
+                yield Static(tip(keys), id="report-keys")
             else:
                 yield Static(
                     "[dim]No project moved to a different commit — nothing new came in.[/]",
@@ -93,3 +104,9 @@ class SyncReportScreen(ModalScreen[None]):
 
     def action_dismiss_screen(self) -> None:
         self.dismiss(None)
+
+    def action_show_output(self) -> None:
+        if self._output is not None:
+            output, self._output = self._output, None
+            self.dismiss(None)
+            self.app.push_screen(output)

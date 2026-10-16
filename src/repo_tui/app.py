@@ -773,6 +773,7 @@ class RepoTuiApp(App):
         jobs: int | None = None,
         project: Project | None = None,
         track_updates: bool = False,
+        open_report: bool = False,
         reload_tree: bool = False,
     ) -> None:
         """Run a repo command behind a blocking BusyModal, refresh status,
@@ -782,7 +783,10 @@ class RepoTuiApp(App):
         `command`/`jobs` are only shown in the dialog. With `project`, only
         that project is re-scanned afterwards. With `track_updates` (sync,
         detach), each project's HEAD is recorded before and compared after,
-        and what moved becomes the new sync report. With `reload_tree`
+        and what moved becomes the new sync report; `open_report` (plain
+        syncs only: after a detach or manifest switch, moved commits are
+        expected, not news) opens it in place of a clean output screen
+        when anything moved. With `reload_tree`
         (manifest switch), the project list is re-read from the manifest
         before the rescan."""
         header = self.query_one("#header", HeaderBar)
@@ -822,6 +826,17 @@ class RepoTuiApp(App):
             header.set_syncing(False)
             await busy.dismiss()
         result = ResultScreen(title, log_lines, returncode, report)
+        if (
+            open_report
+            and self.config.show_sync_report
+            and report is not None
+            and report.changes
+            and result.severity == "information"
+        ):
+            self.push_screen(
+                SyncReportScreen(report, {p.path: p for p in self.projects}, output=result)
+            )
+            return
         if result.severity == "information" and self.config.result_screen == "problems":
             updated = f", {len(report.changes)} updated" if report else ""
             self.notify(f"{escape(title)} — {result.status}{updated}", timeout=4)
@@ -921,6 +936,7 @@ class RepoTuiApp(App):
                 jobs=self.config.sync_jobs,
                 project=project,
                 track_updates=True,
+                open_report=True,
             ),
             exclusive=True,
             group="sync",
@@ -957,6 +973,7 @@ class RepoTuiApp(App):
                 command=" ".join(repo_backend.sync_args(jobs=self.config.sync_jobs)),
                 jobs=self.config.sync_jobs,
                 track_updates=True,
+                open_report=True,
             ),
             exclusive=True,
             group="sync",

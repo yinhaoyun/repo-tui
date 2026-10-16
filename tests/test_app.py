@@ -986,19 +986,24 @@ def test_sync_reports_which_projects_got_which_commits(dirty_tree, monkeypatch):
             assert [(c.path, c.added, c.dropped) for c in report.changes] == [("build/make", 2, 0)]
             assert "1 updated" in str(app.query_one("#hdr-sync").content)
 
-            result = app.screen_stack[-1]
-            assert isinstance(result, ResultScreen)
-            assert "1 project(s) moved" in str(result.query_one("#result-updates").content)
-            await pilot.press("u")
-            await pilot.pause()
+            # a clean sync that moved something opens the report on its own
             await app.workers.wait_for_complete()
             await pilot.pause()
-
             screen = app.screen_stack[-1]
             assert isinstance(screen, SyncReportScreen)
             detail = "\n".join(line.text for line in screen.query_one("#report-detail").lines)
             assert "Add rule A" in detail and "Add rule B" in detail
             assert "New commits (2)" in detail
+
+            # o swaps it for the command's output, which links back with u
+            await pilot.press("o")
+            await pilot.pause()
+            result = app.screen_stack[-1]
+            assert isinstance(result, ResultScreen)
+            assert "1 project(s) moved" in str(result.query_one("#result-updates").content)
+            await pilot.press("u")
+            await pilot.pause()
+            assert isinstance(app.screen_stack[-1], SyncReportScreen)
             await pilot.press("escape")
             await pilot.pause()
 
@@ -1006,6 +1011,47 @@ def test_sync_reports_which_projects_got_which_commits(dirty_tree, monkeypatch):
             await pilot.click("#hdr-sync")
             await pilot.pause()
             assert isinstance(app.screen_stack[-1], SyncReportScreen)
+
+    asyncio.run(scenario())
+
+
+def test_sync_report_does_not_open_itself_when_off_or_after_detach(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        make = dirty_tree / "build/make"
+
+        async def fake_sync(repo_root, paths=None, on_output=None, on_progress=None, jobs=None):
+            _commit(make, "a.mk", "Add rule A")
+            return 0
+
+        async def fake_detach(repo_root, paths=None, on_output=None, on_progress=None, jobs=None):
+            _commit(make, "b.mk", "Add rule B")
+            return 0
+
+        monkeypatch.setattr(repo_backend, "sync_projects", fake_sync)
+        monkeypatch.setattr(repo_backend, "sync_detach", fake_detach)
+
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+
+            # a detach moves HEAD on purpose: output screen, report via u only
+            app._detach_project(next(p for p in app.projects if p.path == "build/make"))
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert [c.path for c in app.sync_report.changes] == ["build/make"]
+            assert isinstance(app.screen_stack[-1], ResultScreen)
+            await pilot.press("escape")
+            await pilot.pause()
+
+            app.config.show_sync_report = False
+            await pilot.press("space", "S")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert [c.added for c in app.sync_report.changes] == [1]
+            assert isinstance(app.screen_stack[-1], ResultScreen)
 
     asyncio.run(scenario())
 
