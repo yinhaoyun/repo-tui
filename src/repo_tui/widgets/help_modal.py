@@ -54,6 +54,7 @@ HELP_SECTIONS = [
     ("Change — press space, then a key (stays open until you choose)", [
         ("space s", "repo sync — selected project only"),
         ("space S", "repo sync — entire tree"),
+        ("space F", "repo sync -n — fetch all, check nothing out, see what's incoming"),
         ("space d", "repo sync -d -l — detach to manifest revision (no fetch)"),
         ("space b", "repo start — create a new branch (asks for a name)"),
         ("space c", "checkout — switch to an existing local branch"),

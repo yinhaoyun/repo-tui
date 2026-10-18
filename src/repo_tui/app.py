@@ -824,6 +824,7 @@ class RepoTuiApp(App):
         track_updates: bool = False,
         open_report: bool = False,
         reload_tree: bool = False,
+        incoming: bool = False,
     ) -> None:
         """Run a repo command behind a blocking BusyModal, refresh status,
         then show the command's output in a ResultScreen that pulls out any
@@ -837,7 +838,9 @@ class RepoTuiApp(App):
         expected, not news) opens it in place of a clean output screen
         when anything moved. With `reload_tree`
         (manifest switch), the project list is re-read from the manifest
-        before the rescan."""
+        before the rescan. With `incoming` (a fetch), what each project's
+        upstream has that HEAD doesn't becomes the command's report, opened
+        like a sync's -- even when it's empty, since that's the answer."""
         header = self.query_one("#header", HeaderBar)
         header.set_syncing(True)
         busy = BusyModal(title, command=command, jobs=jobs)
@@ -868,6 +871,8 @@ class RepoTuiApp(App):
                 returncode = None
             if track_updates:
                 report = await self._compare_commits(busy, title, returncode, targets, before)
+            if incoming:
+                report = await self._compare_upstream(busy, title, returncode, targets)
             if reload_tree:
                 log_lines += self._reload_tree()
             await self._refresh(busy, only=[project] if project else None)
@@ -877,9 +882,8 @@ class RepoTuiApp(App):
         result = ResultScreen(title, log_lines, returncode, report)
         if (
             open_report
-            and self.config.show_sync_report
             and report is not None
-            and report.changes
+            and (report.incoming or (self.config.show_sync_report and report.changes))
             and result.severity == "information"
         ):
             self.push_screen(
@@ -888,6 +892,8 @@ class RepoTuiApp(App):
             return
         if result.severity == "information" and self.config.result_screen == "problems":
             updated = f", {len(report.changes)} updated" if report else ""
+            if report is not None and report.incoming:
+                updated = f", {len(report.changes)} with new commits upstream"
             self.notify(f"{escape(title)} — {result.status}{updated}", timeout=4)
             return
         self.push_screen(result)
@@ -918,6 +924,23 @@ class RepoTuiApp(App):
         self.sync_report = report
         self.query_one("#header", HeaderBar).set_report(report)
         return report
+
+    async def _compare_upstream(
+        self, busy: BusyModal, title: str, returncode: int | None, targets: list[Project]
+    ) -> SyncReport:
+        """After a fetch: re-read the manifest (repo sync -n updates it too,
+        so a revision may have changed), then compare each project's HEAD
+        with the upstream commit a sync would check out."""
+        busy.set_phase("Comparing with upstream…")
+        fresh = {p.path: p for p in repo_backend.load_projects(self.repo_root)}
+        for project in targets:
+            if project.path in fresh:
+                project.manifest_revision = fresh[project.path].manifest_revision
+                project.remote = fresh[project.path].remote
+        changes = await to_thread(
+            git_backend.incoming_changes, targets, self.config.max_workers
+        )
+        return SyncReport(title, time.time(), returncode, len(targets), changes, incoming=True)
 
     def _reload_tree(self) -> list[str]:
         """Re-read the manifest after it changed: header info and the
@@ -1441,6 +1464,25 @@ class RepoTuiApp(App):
 
     def action_sync_all(self) -> None:
         self._sync_all()
+
+    def action_fetch_all(self) -> None:
+        """Space F: repo sync -n across the tree -- fetch, check nothing out
+        -- then show what a sync would bring into each project."""
+        jobs = self.config.sync_jobs
+        self.run_worker(
+            self._run_and_refresh(
+                "repo sync -n (fetch all)",
+                lambda on_output, on_progress: repo_backend.fetch_projects(
+                    self.repo_root, on_output=on_output, on_progress=on_progress, jobs=jobs
+                ),
+                command=" ".join(repo_backend.sync_args(jobs=jobs, network_only=True)),
+                jobs=jobs,
+                open_report=True,
+                incoming=True,
+            ),
+            exclusive=True,
+            group="sync",
+        )
 
     def action_detach(self) -> None:
         project = self._selected_project()

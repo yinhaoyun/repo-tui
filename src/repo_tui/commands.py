@@ -17,6 +17,8 @@ if TYPE_CHECKING:
 COMMANDS = [
     ("Sync project", "repo sync the selected project", "sync_selected", "space s", "project"),
     ("Sync all projects", "repo sync the whole tree", "sync_all", "space S", ""),
+    ("Fetch all, see incoming", "repo sync -n: fetch without checking out, then show what a "
+     "sync would bring in", "fetch_all", "space F", ""),
     ("Detach project to manifest revision", "repo sync -d -l the selected project, no fetch",
      "detach", "space d", "project"),
     ("Start new branch", "repo start a branch in the selected project", "start_branch",

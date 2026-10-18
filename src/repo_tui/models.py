@@ -130,6 +130,9 @@ class SyncReport:
     returncode: Optional[int]
     scanned: int  # projects whose commit was compared
     changes: list[HeadChange] = field(default_factory=list)
+    # A fetch's report (repo sync -n): nothing moved yet; each change is
+    # HEAD -> the upstream commit a sync would check out.
+    incoming: bool = False
 
 
 @dataclass

@@ -392,13 +392,19 @@ async def _stream_subprocess_tty(
 
 
 def sync_args(
-    paths: Optional[list[str]] = None, jobs: Optional[int] = None, detach: bool = False
+    paths: Optional[list[str]] = None,
+    jobs: Optional[int] = None,
+    detach: bool = False,
+    network_only: bool = False,
 ) -> list[str]:
     """argv for `repo sync`; shared with the UI so it can show the command.
 
     `detach` is local-only (`-d -l`): going back to the manifest revision
-    needs no network fetch, so it doesn't contact the server at all."""
+    needs no network fetch, so it doesn't contact the server at all.
+    `network_only` (`-n`) fetches but leaves every checkout alone."""
     args = ["repo", "sync", *(["-d", "-l"] if detach else ["--current-branch"])]
+    if network_only:
+        args.insert(2, "-n")
     if jobs:
         args.append(f"-j{jobs}")
     return args + list(paths or [])
@@ -414,6 +420,19 @@ async def sync_projects(
     """Run `repo sync [-jN] [paths...]`, streaming output and live progress."""
     return await _stream_subprocess_tty(
         repo_root, sync_args(paths, jobs), on_output, on_progress
+    )
+
+
+async def fetch_projects(
+    repo_root: Path,
+    paths: Optional[list[str]] = None,
+    on_output: Optional[OutputCallback] = None,
+    on_progress: Optional[OutputCallback] = None,
+    jobs: Optional[int] = None,
+) -> int:
+    """Run `repo sync -n`: fetch what's new without touching any checkout."""
+    return await _stream_subprocess_tty(
+        repo_root, sync_args(paths, jobs, network_only=True), on_output, on_progress
     )
 
 

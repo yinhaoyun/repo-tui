@@ -9,6 +9,7 @@ ever reaches the UI.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -214,21 +215,60 @@ def head_changes(
         return sorted(pool.map(change, moved), key=lambda c: c.path)
 
 
+def upstream_commit(project: Project) -> str:
+    """The commit a `repo sync` would check out, from what's already fetched:
+    the manifest revision's remote-tracking branch, its tag, or the pinned
+    sha. '' when that can't be told (no revision, no such ref yet)."""
+    rev = project.manifest_revision
+    if not rev:
+        return ""
+    if re.fullmatch(r"[0-9a-f]{40}", rev) or rev.startswith("refs/tags/"):
+        ref = rev
+    elif project.remote:
+        branch = rev[len("refs/heads/"):] if rev.startswith("refs/heads/") else rev
+        ref = f"refs/remotes/{project.remote}/{branch}"
+    else:
+        return ""
+    try:
+        out = _run_git(project.abs_path, ["rev-parse", "--verify", "-q", f"{ref}^{{commit}}"])
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return out.strip()
+
+
+def incoming_changes(projects: Iterable[Project], max_workers: int = 16) -> list[HeadChange]:
+    """Projects whose upstream commit has commits HEAD doesn't: what a sync
+    would bring in (`added`), and HEAD's own commits upstream lacks
+    (`dropped`). Sorted by path."""
+    projects = list(projects)
+    heads = head_commits(projects, max_workers)
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        upstream = dict(zip((p.path for p in projects), pool.map(upstream_commit, projects)))
+    changes = head_changes(projects, heads, upstream, max_workers)
+    return [c for c in changes if c.added]
+
+
 _LOG_LIMIT = 200
 _LOG_FORMAT = "--format=%h  %s  (%an, %ar)"
 
 
-def describe_head_change(project: Project, change: HeadChange) -> str:
+def describe_head_change(project: Project, change: HeadChange, incoming: bool = False) -> str:
     """Text for the sync report's detail pane: the move, a diff summary, and
-    the commits it brought in (and dropped, if any)."""
+    the commits it brought in (and dropped, if any). `incoming`: a fetch's
+    report, where nothing moved yet -- HEAD vs the upstream commit."""
     cwd = project.abs_path
-    lines = [f"{change.old[:12]} → {change.new[:12]}"]
+    if incoming:
+        lines = [f"HEAD {change.old[:12]} → upstream {change.new[:12]}"]
+        headings = ("Upstream commits a sync would bring in", "On HEAD but not upstream")
+    else:
+        lines = [f"{change.old[:12]} → {change.new[:12]}"]
+        headings = ("New commits", "No longer on HEAD")
     stat = _run_git(cwd, ["diff", "--shortstat", change.old, change.new]).strip()
     if stat:
         lines.append(stat)
     for revs, heading, total in (
-        (f"{change.old}..{change.new}", "New commits", change.added),
-        (f"{change.new}..{change.old}", "No longer on HEAD", change.dropped),
+        (f"{change.old}..{change.new}", headings[0], change.added),
+        (f"{change.new}..{change.old}", headings[1], change.dropped),
     ):
         if not total:
             continue

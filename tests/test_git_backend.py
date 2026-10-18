@@ -283,3 +283,45 @@ def test_unpushed_commits_against_the_upstream(tmp_path):
     count, shown = git_backend.unpushed_commits(project, "topic", limit=2)
     assert count == 3
     assert [line.split(" ", 1)[1] for line in shown] == ["three", "two"]
+
+
+def test_upstream_commit_and_incoming_changes(tmp_path):
+    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+
+    def git(cwd, *args):
+        return subprocess.run(["git", *args], cwd=cwd, check=True,
+                              capture_output=True, text=True, env=env).stdout.strip()
+
+    server, work = tmp_path / "server", tmp_path / "work"
+    server.mkdir()
+    git(server, "init", "-q", "-b", "main")
+    git(server, "commit", "-q", "--allow-empty", "-m", "base")
+    git(tmp_path, "clone", "-q", "-o", "aosp", str(server), str(work))
+    git(work, "checkout", "-q", "--detach")
+    base = git(work, "rev-parse", "HEAD")
+    project = Project(path="p", name="p", abs_path=work, manifest_revision="main", remote="aosp")
+
+    assert git_backend.upstream_commit(project) == base
+    assert git_backend.incoming_changes([project]) == []  # nothing new
+
+    for subject in ("one", "two"):
+        git(server, "commit", "-q", "--allow-empty", "-m", subject)
+    git(server, "tag", "v1")
+    git(work, "fetch", "-q", "--tags", "aosp")
+    tip = git(server, "rev-parse", "HEAD")
+    assert git_backend.upstream_commit(project) == tip
+    for rev in ("refs/heads/main", "refs/tags/v1", tip):
+        project.manifest_revision = rev
+        assert git_backend.upstream_commit(project) == tip, rev
+    project.manifest_revision = "no-such-branch"
+    assert git_backend.upstream_commit(project) == ""
+
+    project.manifest_revision = "main"
+    git(work, "commit", "-q", "--allow-empty", "-m", "local only")  # on the detached HEAD
+    [change] = git_backend.incoming_changes([project])
+    assert (change.path, change.new, change.added, change.dropped) == ("p", tip, 2, 1)
+    text = git_backend.describe_head_change(project, change, incoming=True)
+    assert text.startswith("HEAD ") and "upstream" in text.splitlines()[0]
+    assert "Upstream commits a sync would bring in (2):" in text
+    assert "On HEAD but not upstream (1):" in text

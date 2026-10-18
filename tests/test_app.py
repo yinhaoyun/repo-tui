@@ -1993,3 +1993,58 @@ def test_help_scrolls_on_a_short_terminal_and_other_keys_close_it(dirty_tree):
             assert not isinstance(app.screen_stack[-1], HelpModal)
 
     asyncio.run(scenario())
+
+
+def _fake_upstream(path, subject="upstream change"):
+    """Point refs/remotes/aosp/main (the fixture manifest's remote/revision)
+    at a new commit on top of HEAD, as a fetch would."""
+    sha = subprocess.run(
+        ["git", "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", subject],
+        cwd=path, check=True, capture_output=True, text=True, env=_GIT_ENV,
+    ).stdout.strip()
+    _git(path, "update-ref", "refs/remotes/aosp/main", sha)
+
+
+@pytest.mark.parametrize("upstream_moved", [True, False])
+def test_fetch_all_shows_what_a_sync_would_bring_in(dirty_tree, monkeypatch, upstream_moved):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        calls = []
+
+        async def fake_fetch(repo_root, paths=None, on_output=None, on_progress=None, jobs=None):
+            calls.append(paths)
+            if upstream_moved:
+                _fake_upstream(dirty_tree / "build/make")
+            return 0
+
+        monkeypatch.setattr(repo_backend, "fetch_projects", fake_fetch)
+
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("space", "F")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert calls == [None]
+            report_screen = app.screen_stack[-1]
+            assert isinstance(report_screen, SyncReportScreen)
+            title = str(report_screen.query_one("#report-title").render())
+            assert "Incoming" in title
+            if upstream_moved:
+                summary = str(report_screen.query_one("#report-summary").render())
+                assert "1 of 2 project(s) have new commits upstream" in summary
+                await pilot.pause(0.3)
+                await app.workers.wait_for_complete()
+                detail = "\n".join(
+                    str(line.text) for line in report_screen.query_one("#report-detail").lines
+                )
+                assert "Upstream commits a sync would bring in (1):" in detail
+                assert "upstream change" in detail
+            else:
+                assert "Up to date" in str(report_screen.query_one("#report-empty").render())
+            # a fetch moves no checkout, so it isn't the "last sync"
+            assert app.sync_report is None
+
+    asyncio.run(scenario())

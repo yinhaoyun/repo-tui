@@ -200,7 +200,7 @@ uv manages it, and `which repo-tui` shows where the command lives.
   press Enter (or click) to see its full diff.
 - **Bottom bar**: the always-on keys, none of which can change a checkout.
   Press `Space` to open the action panel — a box listing every key that
-  does (sync, detach, branch, checkout, abandon, discard, forall, switch manifest), grouped into "this project" and
+  does (sync, fetch, detach, branch, checkout, abandon, discard, forall, switch manifest), grouped into "this project" and
   "whole tree", with the target project in its title. It stays open until
   you press an action key (runs it, then closes), or `Esc`/`Space` to exit.
   Right-clicking a project row — or `enter` / `shift+F10` on it — opens
@@ -252,6 +252,7 @@ and the focus line's menu key always stay, and the full list is in `?`.
 | `q` | quit |
 | `Space` then `s` | `repo sync` the selected project |
 | `Space` then `S` | `repo sync` the whole tree |
+| `Space` then `F` | `repo sync -n` — fetch the whole tree without checking anything out, then show what a sync would bring into each project (see below) |
 | `Space` then `d` | `repo sync -d -l` — detach the selected project to its manifest revision (local only, no fetch) |
 | `Space` then `b` | `repo start <branch>` — create a new branch on the selected project (prompts for a name; one git wouldn't accept, e.g. starting with `-` or containing `..`, is refused and asked again with your text kept) |
 | `Space` then `c` | `repo checkout <branch>` — switch to an existing local branch (pick from a list, or type one) |
@@ -319,6 +320,22 @@ current project, jobs running) and the output tail. Sync runs with
 [sync]
 jobs = 4
 ```
+
+## Seeing what's incoming (`Space F`)
+
+`Space F` runs `repo sync -n -c -jN` across the tree: it fetches from the
+server but leaves every checkout (and your working files) as they are.
+Then, since `repo sync -n` can update the manifest too, repo-tui re-reads
+it and compares each project's HEAD with the commit a sync would check
+out — the manifest revision's remote branch, its tag, or the pinned sha.
+
+The result opens in the report screen as **Incoming**: every project
+with new commits upstream (`+N`, and `−N` for commits on HEAD that
+upstream doesn't have), and for the highlighted one, the diff summary and
+the commits a sync would bring in. If nothing is new it says so. A fetch
+with errors or warnings opens its output first; `u` there gets to the
+report. It doesn't replace the last sync's report (header, `u`), since
+nothing was checked out. `Space S` then syncs them in.
 
 ## Abandoning branches (`Space k` / `Space K`)
 

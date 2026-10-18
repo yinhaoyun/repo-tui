@@ -16,9 +16,11 @@ from textual.widgets import Static
 from ..hints import key, tip
 
 # (key, action id, label) — split by what the action touches. Every action
-# here changes a checkout; lowercase keys act on the selected project, Shift
-# on the whole tree (s/S, M), matching r/R on the top layer. The file actions
-# are only offered while the file list has focus, on the file at its cursor.
+# here changes a checkout, or (fetch) is a long trip to the server that a
+# stray key shouldn't start; lowercase keys act on the selected project,
+# Shift on the whole tree (s/S, k/K, F, M), matching r/R on the top layer.
+# The file actions are only offered while the file list has focus, on the
+# file at its cursor.
 FILE_ACTIONS = [
     ("a", "stage_file", "stage (git add)"),
     ("u", "unstage_file", "unstage"),
@@ -35,6 +37,7 @@ PROJECT_ACTIONS = [
 ]
 TREE_ACTIONS = [
     ("S", "sync_all", "sync all"),
+    ("F", "fetch_all", "fetch all (sync -n), see incoming"),
     ("K", "abandon_tree", "abandon branch everywhere…"),
     ("f", "forall", "forall <cmd>"),
     ("M", "switch_manifest", "switch manifest…"),

@@ -89,6 +89,9 @@ def test_sync_args_adds_jobs_and_paths():
     assert sync_args(["a/b"], 8) == ["repo", "sync", "--current-branch", "-j8", "a/b"]
     assert sync_args(jobs=None) == ["repo", "sync", "--current-branch"]
     assert sync_args(["a"], detach=True) == ["repo", "sync", "-d", "-l", "a"]
+    assert sync_args(jobs=4, network_only=True) == [
+        "repo", "sync", "-n", "--current-branch", "-j4"
+    ]
 
 
 def test_abandon_args_one_branch_or_all():

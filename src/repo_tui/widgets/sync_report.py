@@ -26,7 +26,10 @@ from ..models import Project, SyncReport
 def report_summary(report: SyncReport) -> str:
     when = time.strftime("%H:%M:%S", time.localtime(report.finished_at))
     count = len(report.changes)
-    moved = f"{count} of {report.scanned} project(s) moved to a new commit"
+    if report.incoming:
+        moved = f"{count} of {report.scanned} project(s) have new commits upstream"
+    else:
+        moved = f"{count} of {report.scanned} project(s) moved to a new commit"
     failed = "" if report.returncode == 0 else "  [b red]— the command failed[/]"
     return f"{escape(report.title)} at {when}: [b]{moved}[/]{failed}"
 
@@ -51,9 +54,11 @@ class SyncReportScreen(ModalScreen[None]):
 
     def compose(self):
         with Vertical(id="report-box"):
-            yield Static(
-                f"[b]Last sync report[/]  {close_tip('esc', 'q')}", id="report-title"
+            heading = (
+                "Incoming — fetched, not checked out yet" if self._report.incoming
+                else "Last sync report"
             )
+            yield Static(f"[b]{heading}[/]  {close_tip('esc', 'q')}", id="report-title")
             yield Static(report_summary(self._report), id="report-summary")
             if self._report.changes:
                 with Horizontal(id="report-body"):
@@ -63,14 +68,18 @@ class SyncReportScreen(ModalScreen[None]):
                     )
                     yield RichLog(id="report-detail", wrap=False, markup=False)
                 keys = f"{key('↑↓')} pick a project to see its new commits"
+                if self._report.incoming:
+                    keys += f"   {key('space')} {key('S')} syncs them in"
                 if self._output is not None:
                     keys += f"   {key('o')} full command output"
                 yield Static(tip(keys), id="report-keys")
             else:
-                yield Static(
-                    "[dim]No project moved to a different commit — nothing new came in.[/]",
-                    id="report-empty",
+                empty = (
+                    "Up to date: no project has new commits upstream."
+                    if self._report.incoming
+                    else "No project moved to a different commit — nothing new came in."
                 )
+                yield Static(f"[dim]{empty}[/]", id="report-empty")
 
     def _option(self, index: int) -> Option:
         change = self._report.changes[index]
@@ -97,7 +106,9 @@ class SyncReportScreen(ModalScreen[None]):
         if project is None:
             text = f"{change.path} is no longer in the project list."
         else:
-            text = await to_thread(git_backend.describe_head_change, project, change)
+            text = await to_thread(
+                git_backend.describe_head_change, project, change, self._report.incoming
+            )
         log.clear()
         log.write(Text(change.path, style="b"))
         log.write(text)

@@ -15,6 +15,7 @@ from textual.widgets import RichLog, Static
 from .. import problems
 from ..hints import close_tip, key, tip
 from ..models import SyncReport
+from .sync_report import SyncReportScreen
 
 _MAX_PROBLEMS_SHOWN = 10
 
@@ -79,8 +80,12 @@ class ResultScreen(ModalScreen[None]):
             )
             if self._report is not None:
                 count = len(self._report.changes)
+                what = (
+                    "have new commits upstream" if self._report.incoming
+                    else "moved to a new commit"
+                )
                 yield Static(
-                    f"[b cyan]{count} project(s) moved to a new commit[/]  "
+                    f"[b cyan]{count} project(s) {what}[/]  "
                     + tip(f"press {key('u')} to see which, and what came in"),
                     id="result-updates",
                 )
@@ -109,6 +114,9 @@ class ResultScreen(ModalScreen[None]):
         self.dismiss(None)
 
     def action_show_report(self) -> None:
+        # This command's own report: the last sync's, or a fetch's incoming.
         if self._report is not None:
             self.dismiss(None)
-            self.app.action_show_sync_report()
+            self.app.push_screen(
+                SyncReportScreen(self._report, {p.path: p for p in self.app.projects})
+            )
