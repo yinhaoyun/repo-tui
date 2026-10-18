@@ -1911,3 +1911,46 @@ def test_left_click_on_a_file_still_opens_its_diff(dirty_tree):
             assert isinstance(app.screen_stack[-1], DiffScreen)
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("width", [80, 100, 120])
+def test_key_bar_fits_a_narrow_terminal_and_keeps_the_essentials(dirty_tree, width):
+    from rich.cells import cell_len
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(width, 30)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            keybar = app.query_one("#keybar")
+            room = keybar.size.width
+
+            def lines():
+                return [line for line in str(keybar.render()).split("\n")]
+
+            for _ in ("projects", "files"):
+                focus, global_ = lines()  # two lines: the global one never wraps away
+                assert cell_len(focus) <= room and cell_len(global_) <= room
+                for must in ("space actions", "ctrl+p commands", "? help", "q quit"):
+                    assert must in global_
+                assert "menu" in focus
+                await pilot.press("tab")
+                await pilot.pause()
+
+    asyncio.run(scenario())
+
+
+def test_key_bar_shows_more_keys_when_the_terminal_grows(dirty_tree):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(80, 30)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            keybar = app.query_one("#keybar")
+            assert "settings" not in str(keybar.render())
+            await pilot.resize_terminal(200, 30)
+            await pilot.pause()
+            assert "o settings" in str(keybar.render())
+            assert "…" not in str(keybar.render())
+
+    asyncio.run(scenario())

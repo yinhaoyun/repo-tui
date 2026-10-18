@@ -75,6 +75,9 @@ KeyBar {
     background: $primary-background;
     color: $text;
     padding: 0 1;
+    /* never wrap: a wrapped focus line would push the global line out */
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
 }
 
 HelpModal {

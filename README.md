@@ -225,7 +225,9 @@ lines:
 - **Global keys** (bottom line, behind a muted `GLOBAL` label): they work
   wherever focus is, and that line never changes.
 
-The `?` help lists them the same way.
+The `?` help lists them the same way. On a narrow terminal each line drops
+its least needed keys first (and ends in `…`); `space`, `ctrl+p`, `?`, `q`
+and the focus line's menu key always stay, and the full list is in `?`.
 
 | Key | Action |
 |---|---|

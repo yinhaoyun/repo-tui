@@ -7,6 +7,12 @@
   - the global line: a muted GLOBAL label and the keys that work wherever
     focus is.
 
+Each line fits the bar's width: when the terminal is too narrow, the least
+needed keys go first (rank 3, then 2), rightmost first, then alternative
+keys (enter/shift+f10 -> enter), and a "…" says some are hidden. Rank 1
+keys always stay -- including ? (help) and ctrl+p (commands), which lead
+to everything that was dropped.
+
 None of these keys can change a checkout. Everything that does (sync,
 detach, branch, checkout, abandon, discard, forall, stage/unstage/revert
 a file) lives behind Space, which opens the ActionPanel listing them.
@@ -14,57 +20,107 @@ a file) lives behind Space, which opens the ActionPanel listing them.
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
+from rich.cells import cell_len
 from textual.widgets import Static
 
 from ..hints import key
 
-Group = List[Tuple[List[str], str]]
+# (keys, label, rank): rank 1 always shows, 3 is the first to go.
+Item = Tuple[List[str], str, int]
+Group = List[Item]
 
 # Keys that work wherever focus is, as groups separated by │.
 GLOBAL_GROUPS: list[Group] = [
-    [(["space"], "actions"), (["ctrl+p"], "commands"), (["?"], "help")],
-    [(["r", "R"], "refresh"), (["w"], "why"), (["u"], "last sync")],
-    [(["/"], "filter"), (["a"], "all"), (["i"], "ignored")],
-    [(["o"], "settings"), (["v", "U"], "check/update"), (["q"], "quit")],
+    [(["space"], "actions", 1), (["ctrl+p"], "commands", 1), (["?"], "help", 1)],
+    [(["r", "R"], "refresh", 2), (["w"], "why", 3), (["u"], "last sync", 3)],
+    [(["/"], "filter", 2), (["a"], "all", 2), (["i"], "ignored", 3)],
+    [(["o"], "settings", 3), (["v", "U"], "check/update", 3), (["q"], "quit", 1)],
 ]
 
 # Focus contexts: (label, keys) for whatever has focus.
 FOCUS_CONTEXTS: dict[str, tuple[str, Group]] = {
     "projects": ("PROJECT LIST", [
-        (["↑↓"], "select"), (["enter", "shift+f10"], "menu"), (["tab"], "to files"),
-        (["y"], "copy project path"),
+        (["↑↓"], "select", 3), (["enter", "shift+f10"], "menu", 1), (["tab"], "to files", 2),
+        (["y"], "copy project path", 2),
     ]),
     "files": ("FILE LIST", [
-        (["↑↓"], "select"), (["enter", "shift+f10"], "menu"), (["click"], "diff"),
-        (["l"], "history"), (["b"], "blame"),
-        (["e"], "edit"), (["y"], "copy file path"), (["space"], "+ stage/unstage/revert"),
-        (["tab"], "to projects"),
+        (["↑↓"], "select", 3), (["enter", "shift+f10"], "menu", 1), (["click"], "diff", 3),
+        (["l"], "history", 2), (["b"], "blame", 2),
+        (["e"], "edit", 2), (["y"], "copy file path", 3),
+        (["space"], "+ stage/unstage/revert", 1), (["tab"], "to projects", 2),
     ]),
     "filter": ("FILTER", [
-        (["type"], "to filter by path/name"), (["enter"], "keep it"), (["esc"], "clear"),
+        (["type"], "to filter by path/name", 2), (["enter"], "keep it", 1),
+        (["esc"], "clear", 1),
     ]),
 }
 
-
-def _group_text(group: Group) -> str:
-    return "  ".join("/".join(key(k) for k in keys) + f" {label}" for keys, label in group)
+_ITEM_GAP, _GROUP_GAP, _MORE = "  ", " │ ", " …"
 
 
-def focus_hint(context: str) -> str:
-    label, group = FOCUS_CONTEXTS[context]
-    return f"[b $background on $accent] {label} [/] " + _group_text(group)
+def _item_width(item: Item) -> int:
+    keys, label, _ = item
+    return cell_len("/".join(keys)) + 1 + cell_len(label)
 
 
-def global_hint() -> str:
-    return "[b $text-muted on $surface] GLOBAL [/] " + " │ ".join(
-        _group_text(g) for g in GLOBAL_GROUPS
+def _line_width(label: str, groups: list[Group], dropped: bool) -> int:
+    shown = [g for g in groups if g]
+    width = cell_len(label) + 3  # " LABEL " and a space
+    width += sum(_item_width(item) for g in shown for item in g)
+    width += sum(len(_ITEM_GAP) * (len(g) - 1) for g in shown)
+    width += len(_GROUP_GAP) * max(0, len(shown) - 1)
+    return width + (len(_MORE) if dropped else 0)
+
+
+def _fit(label: str, groups: list[Group], width: Optional[int]) -> tuple[list[Group], bool]:
+    """`groups` minus the least needed items until the line fits `width`
+    (None: no limit). Returns the groups left and whether any were dropped."""
+    groups = [list(g) for g in groups]
+    dropped = False
+    while width and _line_width(label, groups, dropped) > width:
+        candidates = [
+            (rank, gi, ii)
+            for gi, g in enumerate(groups)
+            for ii, (_, _, rank) in enumerate(g)
+            if rank > 1
+        ]
+        if candidates:
+            _, gi, ii = max(candidates)
+            del groups[gi][ii]
+            dropped = True
+            continue
+        # Only must-haves left: show just the first of alternative keys
+        # (enter/shift+f10 -> enter); past that, the bar clips the rest.
+        trimmed = [[(keys[:1], text, rank) for keys, text, rank in g] for g in groups]
+        if trimmed == groups:
+            break
+        groups, dropped = trimmed, True
+    return groups, dropped
+
+
+def _line(label_markup: str, label: str, groups: list[Group], width: Optional[int]) -> str:
+    groups, dropped = _fit(label, groups, width)
+    body = _GROUP_GAP.join(
+        _ITEM_GAP.join("/".join(key(k) for k in keys) + f" {text}" for keys, text, _ in g)
+        for g in groups
+        if g
     )
+    return f"{label_markup} {body}" + (f"[dim]{_MORE}[/]" if dropped else "")
 
 
-def top_level_hint(context: str = "projects") -> str:
-    return focus_hint(context) + "\n" + global_hint()
+def focus_hint(context: str, width: Optional[int] = None) -> str:
+    label, group = FOCUS_CONTEXTS[context]
+    return _line(f"[b $background on $accent] {label} [/]", label, [group], width)
+
+
+def global_hint(width: Optional[int] = None) -> str:
+    return _line("[b $text-muted on $surface] GLOBAL [/]", "GLOBAL", GLOBAL_GROUPS, width)
+
+
+def top_level_hint(context: str = "projects", width: Optional[int] = None) -> str:
+    return focus_hint(context, width) + "\n" + global_hint(width)
 
 
 class KeyBar(Static):
@@ -73,7 +129,11 @@ class KeyBar(Static):
         self.context = "projects"
 
     def show_top_level(self, context: str | None = None) -> None:
-        """Re-render; with `context`, for that focus context."""
+        """Re-render for the bar's width; with `context`, for that focus
+        context."""
         if context is not None:
             self.context = context
-        self.update(top_level_hint(self.context))
+        self.update(top_level_hint(self.context, self.size.width or None))
+
+    def on_resize(self) -> None:
+        self.show_top_level()
