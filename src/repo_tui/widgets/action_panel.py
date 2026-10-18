@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from rich.markup import escape
 from textual import events
 from textual.containers import Vertical
 from textual.screen import ModalScreen
@@ -98,8 +99,12 @@ class ActionPanel(ModalScreen[Optional[str]]):
             return
         action = self._keys.get(event.character or "")
         if action is None:
-            self.notify(f"'{event.character or event.key}' is not an action key", timeout=2)
-            self.dismiss(None)
+            # Stay open: a slip shouldn't mean pressing Space again.
+            self.notify(
+                f"'{escape(event.character or event.key)}' isn't an action key here — "
+                "pick one above, or Esc/Space to exit",
+                timeout=3,
+            )
             return
         self.dismiss(action)
 

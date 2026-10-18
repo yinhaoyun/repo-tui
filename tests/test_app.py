@@ -405,9 +405,11 @@ def test_immediate_actions_need_action_panel(dirty_tree, monkeypatch):
             assert calls == []
 
             await pilot.press("space")
-            await pilot.press("z")  # not an action key: exits, does nothing
+            await pilot.press("z")  # not an action key: says so, stays open
             await pilot.pause()
-            assert app.action_mode_active is False
+            assert app.action_mode_active is True
+            await pilot.press("escape")
+            await pilot.pause()
             assert len(app.screen_stack) == 1
 
     asyncio.run(scenario())
@@ -1516,6 +1518,7 @@ def test_file_actions_only_from_the_file_list(dirty_tree):
             await pilot.press("a")  # not an action key here
             await pilot.pause()
             await app.workers.wait_for_complete()
+            assert app.screen_stack[-1] is panel
             assert "M  README.md" not in _porcelain(dirty_tree / "frameworks/base")
 
     asyncio.run(scenario())
