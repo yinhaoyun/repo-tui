@@ -319,6 +319,29 @@ def test_action_panel_detach_calls_repo_sync_dash_d(dirty_tree, monkeypatch):
     asyncio.run(scenario())
 
 
+def test_detach_uses_the_sync_jobs_setting(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        app.config.sync_jobs = 3
+        jobs = []
+
+        async def fake_sync_detach(repo_root, paths=None, on_output=None, **kwargs):
+            jobs.append(kwargs.get("jobs"))
+            return 0
+
+        monkeypatch.setattr(repo_backend, "sync_detach", fake_sync_detach)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app._detach_project(next(p for p in app.projects if p.path == "build/make"))
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert jobs == [3]
+
+    asyncio.run(scenario())
+
+
 def test_context_menu_detach_option_calls_repo_sync_dash_d(dirty_tree, monkeypatch):
     async def scenario():
         app = RepoTuiApp(dirty_tree)

@@ -985,9 +985,16 @@ class RepoTuiApp(App):
             self._run_and_refresh(
                 f"repo sync -d: {project.path}",
                 lambda on_output, on_progress: repo_backend.sync_detach(
-                    self.repo_root, [project.path], on_output=on_output, on_progress=on_progress
+                    self.repo_root,
+                    [project.path],
+                    on_output=on_output,
+                    on_progress=on_progress,
+                    jobs=self.config.sync_jobs,
                 ),
-                command=" ".join(repo_backend.sync_args([project.path], detach=True)),
+                command=" ".join(
+                    repo_backend.sync_args([project.path], self.config.sync_jobs, detach=True)
+                ),
+                jobs=self.config.sync_jobs,
                 project=project,
                 track_updates=True,
             ),
