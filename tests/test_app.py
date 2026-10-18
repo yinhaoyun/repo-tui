@@ -342,6 +342,38 @@ def test_detach_uses_the_sync_jobs_setting(dirty_tree, monkeypatch):
     asyncio.run(scenario())
 
 
+def test_bad_branch_name_asks_again_with_the_text_kept(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        started = []
+
+        async def fake_start(repo_root, branch_name, paths=None, on_output=None):
+            started.append((branch_name, paths))
+            return 0
+
+        monkeypatch.setattr(repo_backend, "start_branch", fake_start)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("space", "b")
+            await pilot.pause()
+            await pilot.press(*"-bad", "enter")
+            await pilot.pause()
+            prompt = app.screen_stack[-1]
+            assert isinstance(prompt, PromptModal)
+            assert prompt.query_one("#prompt-input").value == "-bad"
+            assert started == []
+
+            prompt.query_one("#prompt-input").value = "topic/ok"
+            await pilot.press("enter")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert started == [("topic/ok", [app._selected_project().path])]
+
+    asyncio.run(scenario())
+
+
 def test_context_menu_detach_option_calls_repo_sync_dash_d(dirty_tree, monkeypatch):
     async def scenario():
         app = RepoTuiApp(dirty_tree)

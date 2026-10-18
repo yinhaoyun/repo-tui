@@ -252,3 +252,9 @@ def test_fetch_remote_explains_when_there_is_none(tmp_path):
     project.remote = "aosp"
     remote, why = git_backend.fetch_remote(project)
     assert remote == "" and "several remotes (a, b)" in why
+
+
+def test_branch_name_problem_uses_gits_rules():
+    assert git_backend.branch_name_problem("topic/ok") == ""
+    for bad in ["-x", "a b", "a..b", "a~1", "x.lock", "@{-1}", "HEAD"]:
+        assert git_backend.branch_name_problem(bad), bad

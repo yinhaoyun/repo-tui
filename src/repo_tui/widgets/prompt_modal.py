@@ -15,15 +15,16 @@ from ..hints import key, tip
 class PromptModal(ModalScreen[Optional[str]]):
     BINDINGS = [("escape", "cancel", "Cancel")]
 
-    def __init__(self, prompt: str, placeholder: str = "") -> None:
+    def __init__(self, prompt: str, placeholder: str = "", value: str = "") -> None:
         self._prompt = prompt
         self._placeholder = placeholder
+        self._value = value
         super().__init__()
 
     def compose(self):
         with Vertical(id="prompt-box"):
             yield Static(self._prompt, id="prompt-label")
-            yield Input(placeholder=self._placeholder, id="prompt-input")
+            yield Input(self._value, placeholder=self._placeholder, id="prompt-input")
             yield Static(tip(f"{key('enter')} confirm  {key('esc')} cancel"), id="prompt-keys")
 
     def on_mount(self) -> None:

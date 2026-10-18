@@ -283,6 +283,25 @@ def _git_lines(project: Project, args: list[str]) -> tuple[int, list[str]]:
     ]
 
 
+def branch_name_problem(name: str) -> str:
+    """Why `name` can't be a branch name, or "": git's own rules (no
+    leading '-', no spaces, '..', '~', ...). A name git would expand, such
+    as @{-1}, is refused too, so repo gets exactly what was typed."""
+    try:
+        result = subprocess.run(
+            ["git", "check-ref-format", "--branch", name],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_GIT_TIMEOUT,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""  # can't ask git; repo itself will complain
+    if result.returncode == 0 and result.stdout.strip() == name:
+        return ""
+    return f"'{name}' isn't a valid branch name"
+
+
 def _paths_of(file: FileStatus) -> list[str]:
     return [file.path, file.orig_path] if file.orig_path else [file.path]
 

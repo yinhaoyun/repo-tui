@@ -1032,24 +1032,31 @@ class RepoTuiApp(App):
                 handle_choice,
             )
         else:
-
-            def handle_text(branch: str | None) -> None:
-                if branch:
-                    self._checkout_branch(project, branch)
-
-            self.push_screen(
-                PromptModal(
-                    f"{project.path} has no other local branches. "
-                    "Type an existing topic branch name to switch to:",
-                    "branch name",
-                ),
-                handle_text,
+            self._prompt_branch_name(
+                f"{project.path} has no other local branches. "
+                "Type an existing topic branch name to switch to:",
+                lambda branch: self._checkout_branch(project, branch),
             )
 
-    def _prompt_start_branch(self, project: Project) -> None:
+    def _prompt_branch_name(self, prompt: str, on_name, value: str = "") -> None:
+        """Ask for a branch name and call `on_name` with it once git accepts
+        it; a bad name says why and asks again with the text kept."""
+
         def handle(branch: str | None) -> None:
+            branch = (branch or "").strip()
             if not branch:
                 return
+            problem = git_backend.branch_name_problem(branch)
+            if problem:
+                self.notify(escape(problem), severity="error", timeout=6)
+                self._prompt_branch_name(prompt, on_name, branch)
+                return
+            on_name(branch)
+
+        self.push_screen(PromptModal(prompt, "branch name", value), handle)
+
+    def _prompt_start_branch(self, project: Project) -> None:
+        def start(branch: str) -> None:
             self.run_worker(
                 self._run_and_refresh(
                     f"repo start {branch}: {project.path}",
@@ -1062,10 +1069,7 @@ class RepoTuiApp(App):
                 group="branch",
             )
 
-        self.push_screen(
-            PromptModal(f"New branch name for {project.path}:", "branch name"),
-            handle,
-        )
+        self._prompt_branch_name(f"New branch name for {project.path}:", start)
 
     def _discard_changes(self, project: Project) -> None:
         files = [f for f in project.files if not f.ignored]

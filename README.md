@@ -250,7 +250,7 @@ The `?` help lists them the same way.
 | `Space` then `s` | `repo sync` the selected project |
 | `Space` then `S` | `repo sync` the whole tree |
 | `Space` then `d` | `repo sync -d -l` — detach the selected project to its manifest revision (local only, no fetch) |
-| `Space` then `b` | `repo start <branch>` — create a new branch on the selected project (prompts for a name) |
+| `Space` then `b` | `repo start <branch>` — create a new branch on the selected project (prompts for a name; one git wouldn't accept, e.g. starting with `-` or containing `..`, is refused and asked again with your text kept) |
 | `Space` then `c` | `repo checkout <branch>` — switch to an existing local branch (pick from a list, or type one) |
 | `Space` then `x` | discard the selected project's changes so its Stat is clean: tracked changes revert to HEAD, untracked files are deleted; files hidden by your ignore rules, commits and the branch are kept (asks y/N first) |
 | `Space` then `h` | unshallow the selected project only: `git fetch --unshallow <remote>` to get its full history (asks y/N first; also in the right-click menu of a shallow project) |
