@@ -618,6 +618,7 @@ class RepoTuiApp(App):
                     f"history: {project.path}/{file.path}",
                     text,
                     empty="(no commits touch this file yet)",
+                    kind="log",
                 )
             )
 
@@ -639,6 +640,7 @@ class RepoTuiApp(App):
                     f"blame: {project.path}/{file.path}",
                     text,
                     empty="(no blame — binary, deleted, or not committed yet)",
+                    kind="blame",
                 )
             )
 

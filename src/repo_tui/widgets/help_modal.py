@@ -44,6 +44,12 @@ HELP_SECTIONS = [
         ("y", "copy the file's absolute path"),
         ("space a/u/r", "stage / unstage / revert the file (revert asks y/N)"),
     ]),
+    ("Diff, history and blame views", [
+        ("n / N", "next / previous hunk (diff)"),
+        ("j/k, g/G", "scroll a line, jump to the top / bottom"),
+        ("ctrl+d / ctrl+u", "half a page down / up"),
+        ("esc, q", "close"),
+    ]),
     ("Change — press space, then a key (stays open until you choose)", [
         ("space s", "repo sync — selected project only"),
         ("space S", "repo sync — entire tree"),

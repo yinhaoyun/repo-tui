@@ -277,6 +277,14 @@ file at the cursor, and the bottom bar shows them first:
 | `Space` then `u` | unstage it (`git restore --staged`), keeping your edits |
 | `Space` then `r` | revert it: tracked changes back to HEAD (both staged and unstaged), an untracked file deleted — asks y/N first |
 
+The diff, history (`l`) and blame (`b`) views are coloured in the theme's
+colours: added/removed lines and hunk headers; commit ids, dates and
+authors; and blame lines that aren't committed yet stand out. The title
+counts what's there (`+12 −3 · 2 hunks`, `8 commits`, `120 lines, 4 not
+committed`). They open at the top; `n`/`N` jump to the next/previous hunk,
+`j`/`k` scroll, `g`/`G` go to the top/bottom, `ctrl+d`/`ctrl+u` move half a
+page, and `esc`/`q` close.
+
 The `Space` panel only shows the "This file" column when you open it from
 the file list. After each one the project is rescanned and the cursor stays
 on the same file, so you can work down the list; if git refuses, its error
