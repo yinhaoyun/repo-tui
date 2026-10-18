@@ -258,3 +258,28 @@ def test_branch_name_problem_uses_gits_rules():
     assert git_backend.branch_name_problem("topic/ok") == ""
     for bad in ["-x", "a b", "a..b", "a~1", "x.lock", "@{-1}", "HEAD"]:
         assert git_backend.branch_name_problem(bad), bad
+
+
+def test_unpushed_commits_against_the_upstream(tmp_path):
+    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=tmp_path, check=True,
+                              capture_output=True, text=True, env=env).stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    git("commit", "-q", "--allow-empty", "-m", "base")
+    git("branch", "topic")
+    project = Project(path="p", name="p", abs_path=tmp_path)
+    assert git_backend.unpushed_commits(project, "topic") is None  # no upstream
+
+    git("branch", "-q", "--set-upstream-to=main", "topic")
+    assert git_backend.unpushed_commits(project, "topic") == (0, [])
+
+    for subject in ("one", "two", "three"):
+        sha = git("commit-tree", "HEAD^{tree}", "-p", "topic", "-m", subject)
+        git("branch", "-f", "topic", sha)
+    count, shown = git_backend.unpushed_commits(project, "topic", limit=2)
+    assert count == 3
+    assert [line.split(" ", 1)[1] for line in shown] == ["three", "two"]

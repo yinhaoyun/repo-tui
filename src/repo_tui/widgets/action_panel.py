@@ -29,11 +29,13 @@ PROJECT_ACTIONS = [
     ("d", "detach", "detach (sync -d -l)"),
     ("b", "start_branch", "start new branch"),
     ("c", "switch_branch", "checkout branch"),
+    ("k", "abandon_branch", "abandon (delete) branch…"),
     ("x", "discard", "discard changes…"),
     ("h", "unshallow", "unshallow (full history)…"),
 ]
 TREE_ACTIONS = [
     ("S", "sync_all", "sync all"),
+    ("K", "abandon_tree", "abandon branch everywhere…"),
     ("f", "forall", "forall <cmd>"),
     ("M", "switch_manifest", "switch manifest…"),
 ]

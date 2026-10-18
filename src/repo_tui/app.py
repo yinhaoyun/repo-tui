@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from rich.markup import escape
@@ -1071,6 +1072,153 @@ class RepoTuiApp(App):
 
         self._prompt_branch_name(f"New branch name for {project.path}:", start)
 
+    # -- abandon (delete) local branches: Space k (project), Space K (tree)
+
+    _ALL_BRANCHES = "--all"  # menu id; no branch name can start with '-'
+
+    def _prompt_abandon_branch(self, project: Project) -> None:
+        """Space k: pick one of the project's local branches (or all of
+        them) to delete; a project with just one goes straight to the y/N."""
+        if project.error:
+            self.notify(
+                f"{escape(project.path)} couldn't be scanned: {escape(project.error)}",
+                severity="error",
+                timeout=8,
+            )
+            return
+        branches = project.local_branches
+        if not branches:
+            self.notify(f"{escape(project.path)} has no local branches to abandon.", timeout=4)
+            return
+        if len(branches) == 1:
+            self._abandon(project.path, [(project, branches[0])], branches[0], [project.path])
+            return
+        options = [
+            (b, f"{b}  (current)" if b == project.current_branch else b) for b in branches
+        ]
+        options.append((self._ALL_BRANCHES, f"All {len(branches)} branches"))
+
+        def handle(choice: str | None) -> None:
+            if choice == self._ALL_BRANCHES:
+                pairs = [(project, b) for b in branches]
+                self._abandon(project.path, pairs, None, [project.path])
+            elif choice:
+                self._abandon(project.path, [(project, choice)], choice, [project.path])
+
+        self.push_screen(ContextMenu(f"Abandon branch — {project.path}", options), handle)
+
+    def _prompt_abandon_tree(self) -> None:
+        """Space K: pick a branch name and delete it in every project that
+        has it, e.g. a topic branch made with repo start --all."""
+        holders: dict[str, list[Project]] = {}
+        for p in self.projects:
+            for b in p.local_branches:
+                holders.setdefault(b, []).append(p)
+        if not holders:
+            self.notify("No project has a local branch.", timeout=4)
+            return
+        names = sorted(holders, key=lambda b: (-len(holders[b]), b))
+        options = [(b, f"{b}  — {len(holders[b])} project(s)") for b in names]
+
+        def handle(branch: str | None) -> None:
+            if branch:
+                pairs = [(p, branch) for p in holders[branch]]
+                self._abandon(f"{len(pairs)} project(s)", pairs, branch, None)
+
+        self.push_screen(ContextMenu("Abandon a branch in every project", options), handle)
+
+    def _abandon(
+        self,
+        where: str,
+        pairs: list[tuple[Project, str]],
+        branch: str | None,
+        paths: list[str] | None,
+    ) -> None:
+        self.run_worker(
+            self._confirm_abandon(where, pairs, branch, paths), exclusive=True, group="branch"
+        )
+
+    async def _confirm_abandon(
+        self,
+        where: str,
+        pairs: list[tuple[Project, str]],
+        branch: str | None,
+        paths: list[str] | None,
+    ) -> None:
+        """y/N for `repo abandon`, listing what each deleted branch has that
+        its upstream doesn't, since that is what would be lost."""
+        workers = self.config.max_workers
+
+        def look() -> list:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                return list(pool.map(lambda pb: git_backend.unpushed_commits(*pb), pairs))
+
+        unpushed = await to_thread(look)
+        command = " ".join(repo_backend.abandon_args(branch, paths))
+        one_project = len({p.path for p, _ in pairs}) == 1
+        rows, warnings = [], []
+        for (p, b), commits in zip(pairs, unpushed):
+            label = escape(b) if one_project else f"{escape(p.path)}  {escape(b)}"
+            if commits is None:
+                rows.append(f"  {label}  [dim]no upstream — can't tell what isn't pushed[/]")
+            elif commits[0]:
+                rows.append(f"  {label}  [b $text-warning]{commits[0]} unpushed commit(s)[/]")
+                if len(pairs) == 1:
+                    rows += [f"      [dim]{escape(line)}[/]" for line in commits[1]]
+                    if commits[0] > len(commits[1]):
+                        rows.append(f"      [dim]…and {commits[0] - len(commits[1])} more[/]")
+            else:
+                rows.append(f"  {label}  [dim]everything is pushed[/]")
+            if b == p.current_branch and not p.is_detached:
+                if p.has_visible_changes:
+                    warnings.append(
+                        f"[b yellow]![/] {escape(p.path)} is on {escape(b)} with uncommitted "
+                        "changes: repo checks out the manifest revision first, which can "
+                        "fail or carry them along."
+                    )
+                else:
+                    warnings.append(
+                        f"[b yellow]![/] {escape(p.path)} is on {escape(b)}: it's left "
+                        "detached at the manifest revision."
+                    )
+        if len(rows) > 14:
+            rows = rows[:14] + [f"  [dim]…and {len(rows) - 14} more[/]"]
+        lost = sum(c[0] for c in unpushed if c)
+        if lost:
+            outcome = (
+                f"[b red]{lost} unpushed commit(s) go with the branch; "
+                "only git reflog can bring them back.[/]"
+            )
+        elif None in unpushed:
+            outcome = (
+                "[b $text-warning]A branch with no upstream may hold commits that exist "
+                "nowhere else; only git reflog can bring them back.[/]"
+            )
+        else:
+            outcome = "The branch is deleted (git branch -D)."
+        body = "\n".join([*rows, "", f"[dim]$ {escape(command)}[/]", *warnings, outcome])
+        what = f"{len(pairs)} branches" if branch is None else escape(branch)
+        title = f"Abandon {what} in {escape(where)}?"
+
+        def handle(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            single = pairs[0][0] if paths and len(paths) == 1 else None
+            self.run_worker(
+                self._run_and_refresh(
+                    f"repo abandon {branch or '--all'}: {where}",
+                    lambda on_output, _progress: repo_backend.abandon(
+                        self.repo_root, branch, paths, on_output=on_output
+                    ),
+                    command=command,
+                    project=single,
+                ),
+                exclusive=True,
+                group="branch",
+            )
+
+        self.push_screen(ConfirmModal(title, body), handle)
+
     def _discard_changes(self, project: Project) -> None:
         files = [f for f in project.files if not f.ignored]
         if not files:
@@ -1186,9 +1334,12 @@ class RepoTuiApp(App):
             ("detach", "Detach to manifest revision (repo sync -d)"),
             ("switch", "Checkout branch…"),
             ("start", "Start new branch…"),
+            ("abandon", "Abandon branch…"),
             ("discard", "Discard changes…"),
             ("copy", "Copy path"),
         ]
+        if not project.local_branches:
+            options.remove(("abandon", "Abandon branch…"))
         if project.is_shallow:
             options.insert(-1, ("unshallow", "Unshallow (fetch full history)…"))
 
@@ -1203,6 +1354,8 @@ class RepoTuiApp(App):
                 self._prompt_switch_branch(project)
             elif choice == "start":
                 self._prompt_start_branch(project)
+            elif choice == "abandon":
+                self._prompt_abandon_branch(project)
             elif choice == "discard":
                 self._discard_changes(project)
             elif choice == "copy":
@@ -1477,6 +1630,14 @@ class RepoTuiApp(App):
         project = self._selected_project()
         if project is not None:
             self._prompt_start_branch(project)
+
+    def action_abandon_branch(self) -> None:
+        project = self._selected_project()
+        if project is not None:
+            self._prompt_abandon_branch(project)
+
+    def action_abandon_tree(self) -> None:
+        self._prompt_abandon_tree()
 
     def action_switch_branch(self) -> None:
         project = self._selected_project()

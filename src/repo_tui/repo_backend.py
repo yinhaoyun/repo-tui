@@ -5,7 +5,7 @@ because they are slow across a large tree and give us less control than
 talking to git directly per-project (see git_backend.py). We do use `.repo/`
 metadata directly (project list, manifest.xml) to discover the tree's shape,
 and we do shell out to `repo` itself for actions the user explicitly asks
-for: sync, forall, start, abandon.
+for: sync, forall, start, checkout, abandon.
 """
 
 from __future__ import annotations
@@ -449,6 +449,23 @@ async def checkout_branch(
     local topic branch (one previously created with `repo start`)."""
     args = ["repo", "checkout", branch_name, *(paths or [])]
     return await _stream_subprocess(repo_root, args, on_output)
+
+
+def abandon_args(branch: Optional[str], paths: Optional[list[str]] = None) -> list[str]:
+    """argv for `repo abandon`: one branch, or (branch None) every local
+    branch with --all. No paths means every project that has it."""
+    return ["repo", "abandon", *(["--all"] if branch is None else [branch]), *(paths or [])]
+
+
+async def abandon(
+    repo_root: Path,
+    branch: Optional[str],
+    paths: Optional[list[str]] = None,
+    on_output: Optional[OutputCallback] = None,
+) -> int:
+    """Run `repo abandon`: delete a local branch (`git branch -D`), checking
+    out the manifest revision first where it's the current branch."""
+    return await _stream_subprocess(repo_root, abandon_args(branch, paths), on_output)
 
 
 async def sync_detach(

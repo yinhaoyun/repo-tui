@@ -265,6 +265,120 @@ def test_switch_branch_shows_picker_when_multiple_local_branches(dirty_tree, mon
     asyncio.run(scenario())
 
 
+def test_abandon_branch_picks_one_shows_unpushed_and_asks(dirty_tree, monkeypatch):
+    base = dirty_tree / "frameworks/base"
+    # topic-b gets a commit main doesn't have, with main as its upstream
+    sha = subprocess.run(
+        ["git", "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "work in progress"],
+        cwd=base, check=True, capture_output=True, text=True, env=_GIT_ENV,
+    ).stdout.strip()
+    _git(base, "branch", "-f", "topic-b", sha)
+    _git(base, "branch", "-q", "--set-upstream-to=main", "topic-b")
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        calls = []
+
+        async def fake_abandon(repo_root, branch, paths=None, on_output=None):
+            calls.append((branch, paths))
+            return 0
+
+        monkeypatch.setattr(repo_backend, "abandon", fake_abandon)
+
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            _select_project(app.query_one("#project-list", ProjectList), "frameworks/base")
+            await pilot.press("space", "k")
+            await pilot.pause()
+
+            menu = app.screen_stack[-1]
+            assert isinstance(menu, ContextMenu)
+            option_list = menu.query_one("OptionList")
+            assert [o.id for o in option_list._options] == ["main", "topic-b", "--all"]
+            option_list.highlighted = 1
+            await pilot.press("enter")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            confirm = app.screen_stack[-1]
+            assert isinstance(confirm, ConfirmModal)
+            body = str(confirm.query_one("#confirm-body").render())
+            assert "1 unpushed commit(s)" in body
+            assert "work in progress" in body
+            assert "repo abandon topic-b frameworks/base" in body
+            await pilot.press("y")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert calls == [("topic-b", ["frameworks/base"])]
+
+    asyncio.run(scenario())
+
+
+def test_abandon_without_branches_says_so(dirty_tree):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("a")
+            await pilot.pause()
+            _select_project(app.query_one("#project-list", ProjectList), "build/make")
+            await pilot.press("space", "k")
+            await pilot.pause()
+            assert len(app.screen_stack) == 1
+            app._open_context_menu(app._selected_project())
+            await pilot.pause()
+            ids = [o.id for o in app.screen_stack[-1].query_one("OptionList")._options]
+            assert "abandon" not in ids
+
+    asyncio.run(scenario())
+
+
+def test_abandon_a_branch_across_the_tree(dirty_tree, monkeypatch):
+    _git(dirty_tree / "build/make", "branch", "topic-b")
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        calls = []
+
+        async def fake_abandon(repo_root, branch, paths=None, on_output=None):
+            calls.append((branch, paths))
+            return 0
+
+        monkeypatch.setattr(repo_backend, "abandon", fake_abandon)
+
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("space", "K")
+            await pilot.pause()
+
+            menu = app.screen_stack[-1]
+            assert isinstance(menu, ContextMenu)
+            option_list = menu.query_one("OptionList")
+            # most widely held first
+            assert [o.id for o in option_list._options] == ["topic-b", "main"]
+            option_list.highlighted = 0
+            await pilot.press("enter")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            confirm = app.screen_stack[-1]
+            assert isinstance(confirm, ConfirmModal)
+            body = str(confirm.query_one("#confirm-body").render())
+            assert "build/make" in body and "frameworks/base" in body
+            assert "no upstream" in body
+            await pilot.press("y")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert calls == [("topic-b", None)]
+
+    asyncio.run(scenario())
+
+
 def test_switch_branch_falls_back_to_prompt_when_no_other_branches(dirty_tree):
     async def scenario():
         app = RepoTuiApp(dirty_tree)

@@ -8,8 +8,8 @@
     focus is.
 
 None of these keys can change a checkout. Everything that does (sync,
-detach, branch, checkout, discard, forall, stage/unstage/revert a file)
-lives behind Space, which opens the ActionPanel listing them.
+detach, branch, checkout, abandon, discard, forall, stage/unstage/revert
+a file) lives behind Space, which opens the ActionPanel listing them.
 """
 
 from __future__ import annotations

@@ -7,6 +7,7 @@ import pytest
 from repo_tui.repo_backend import (
     RepoTreeError,
     _stream_subprocess_tty,
+    abandon_args,
     current_manifest_file,
     fetch_manifests,
     find_repo_root,
@@ -88,6 +89,12 @@ def test_sync_args_adds_jobs_and_paths():
     assert sync_args(["a/b"], 8) == ["repo", "sync", "--current-branch", "-j8", "a/b"]
     assert sync_args(jobs=None) == ["repo", "sync", "--current-branch"]
     assert sync_args(["a"], detach=True) == ["repo", "sync", "-d", "-l", "a"]
+
+
+def test_abandon_args_one_branch_or_all():
+    assert abandon_args("topic", ["a/b"]) == ["repo", "abandon", "topic", "a/b"]
+    assert abandon_args("topic") == ["repo", "abandon", "topic"]
+    assert abandon_args(None, ["a/b"]) == ["repo", "abandon", "--all", "a/b"]
 
 
 # Mimics repo's progress.py: a \r-redrawn progress line (only when stderr is

@@ -302,6 +302,23 @@ def branch_name_problem(name: str) -> str:
     return f"'{name}' isn't a valid branch name"
 
 
+def unpushed_commits(
+    project: Project, branch: str, limit: int = 5
+) -> Optional[tuple[int, list[str]]]:
+    """Commits on local `branch` that its upstream doesn't have: (count,
+    the newest `limit` as "<sha> <subject>"), or None when the branch has
+    no upstream to compare with."""
+    span = f"{branch}@{{upstream}}..refs/heads/{branch}"
+    returncode, lines = _git_lines(project, ["rev-list", "--count", span])
+    if returncode or not lines or not lines[0].isdigit():
+        return None
+    count = int(lines[0])
+    if not count:
+        return 0, []
+    _, shown = _git_lines(project, ["log", "--format=%h %s", f"-n{limit}", span])
+    return count, shown
+
+
 def _paths_of(file: FileStatus) -> list[str]:
     return [file.path, file.orig_path] if file.orig_path else [file.path]
 

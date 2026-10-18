@@ -50,6 +50,8 @@ HELP_SECTIONS = [
         ("space d", "repo sync -d -l — detach to manifest revision (no fetch)"),
         ("space b", "repo start — create a new branch (asks for a name)"),
         ("space c", "checkout — switch to an existing local branch"),
+        ("space k", "repo abandon — delete a local branch of this project (asks y/N)"),
+        ("space K", "repo abandon — delete a branch in every project that has it (asks y/N)"),
         ("space x", "discard changes — revert to HEAD + delete untracked (asks y/N)"),
         ("space h", "unshallow — fetch the selected project's full history (asks y/N)"),
         ("space f", "repo forall — run a shell command across projects"),

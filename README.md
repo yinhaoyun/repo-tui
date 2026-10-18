@@ -200,7 +200,7 @@ uv manages it, and `which repo-tui` shows where the command lives.
   press Enter (or click) to see its full diff.
 - **Bottom bar**: the always-on keys, none of which can change a checkout.
   Press `Space` to open the action panel — a box listing every key that
-  does (sync, detach, branch, checkout, discard, forall, switch manifest), grouped into "this project" and
+  does (sync, detach, branch, checkout, abandon, discard, forall, switch manifest), grouped into "this project" and
   "whole tree", with the target project in its title. It stays open until
   you press an action key (runs it, then closes), or `Esc`/`Space` to exit.
   Right-clicking a project row — or `enter` / `shift+F10` on it — opens
@@ -252,6 +252,8 @@ The `?` help lists them the same way.
 | `Space` then `d` | `repo sync -d -l` — detach the selected project to its manifest revision (local only, no fetch) |
 | `Space` then `b` | `repo start <branch>` — create a new branch on the selected project (prompts for a name; one git wouldn't accept, e.g. starting with `-` or containing `..`, is refused and asked again with your text kept) |
 | `Space` then `c` | `repo checkout <branch>` — switch to an existing local branch (pick from a list, or type one) |
+| `Space` then `k` | `repo abandon <branch>` — delete one of the selected project's local branches, or all of them (pick from a list; asks y/N first, showing each branch's unpushed commits) |
+| `Space` then `K` | `repo abandon <branch>` across the tree — delete a branch (e.g. one made with `repo start --all`) in every project that has it (pick from a list with how many projects have each; asks y/N first) |
 | `Space` then `x` | discard the selected project's changes so its Stat is clean: tracked changes revert to HEAD, untracked files are deleted; files hidden by your ignore rules, commits and the branch are kept (asks y/N first) |
 | `Space` then `h` | unshallow the selected project only: `git fetch --unshallow <remote>` to get its full history (asks y/N first; also in the right-click menu of a shallow project) |
 | `Space` then `f` | `repo forall -c <command>` across the tree (prompts for the command) |
@@ -291,8 +293,8 @@ The keys follow two rules:
 
 `Space` rather than a tmux-style `ctrl+b` prefix: it's one key, and it
 doesn't collide with tmux, which you're likely running on a build machine.
-The per-project actions (refresh, sync, detach, branch, checkout, discard,
-copy) are also available as a menu: right-click a project row, or press
+The per-project actions (refresh, sync, detach, branch, checkout, abandon,
+discard, copy) are also available as a menu: right-click a project row, or press
 `enter` or `shift+F10` on it (`shift+F10` is the usual keyboard "right-click"
 in desktop apps).
 
@@ -306,6 +308,24 @@ current project, jobs running) and the output tail. Sync runs with
 [sync]
 jobs = 4
 ```
+
+## Abandoning branches (`Space k` / `Space K`)
+
+`repo abandon` deletes a local branch (`git branch -D`); where it's the
+checked-out branch, repo first checks out the manifest revision, leaving
+the project detached.
+
+- `Space k` acts on the selected project. With one local branch it goes
+  straight to the y/N; with several you pick one, or **All N branches**
+  (`repo abandon --all <project>`). Also in the project's right-click menu.
+- `Space K` acts on the whole tree: it lists every local branch name with
+  how many projects have it, and deletes the one you pick in all of them.
+
+The y/N lists, per branch, how many commits it has that its upstream
+doesn't (with the newest few when it's a single branch), says when a branch
+has no upstream so that can't be told, and warns when a project is on the
+branch — especially with uncommitted changes, which can make repo's
+checkout fail. Unpushed commits can only be recovered from `git reflog`.
 
 ## Unshallowing a project (`Space h`)
 
