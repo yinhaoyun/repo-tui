@@ -22,6 +22,7 @@ HELP_SECTIONS = [
         ("enter, shift+F10", "the project's actions as a menu (also right-click)"),
     ]),
     ("Global — anywhere; never changes a checkout (lowercase: this project, Shift: whole tree)", [
+        ("ctrl+p", "command palette: find any action by name and run it"),
         ("r", "refresh the selected project (e.g. after editing it elsewhere)"),
         ("R", "refresh all (parallel git status across every project)"),
         ("w", "why each project counts as changed"),

@@ -13,12 +13,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from rich.markup import escape
-from textual.app import App, ComposeResult
+from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import DataTable, Input
 
 from . import __version__
+from . import commands
 from . import config as config_mod
 from . import git_backend
 from . import hints
@@ -297,6 +298,45 @@ class RepoTuiApp(App):
         """Re-scan just this project, e.g. after editing it outside repo-tui."""
         self.run_worker(self._refresh(only=[project]), exclusive=True, group="refresh")
 
+    # -- command palette (ctrl+p) ------------------------------------------
+
+    def action_command_palette(self) -> None:
+        """Only over the main screen: never behind a running command's
+        dialog, where a palette command could start another one."""
+        if len(self.screen_stack) == 1:
+            super().action_command_palette()
+
+    def get_system_commands(self, screen):  # noqa: ANN001, ANN201 - textual API
+        for command in super().get_system_commands(screen):
+            # Textual's theme switch doesn't save; ours ("Theme") does.
+            if command.title not in ("Theme", "Change theme"):
+                yield command
+        if screen is self.screen_stack[0]:
+            for title, help_text, action in commands.available(self):
+                yield SystemCommand(title, help_text, getattr(self, f"action_{action}"))
+
+    def action_pick_theme(self) -> None:
+        def handle(theme: str | None) -> None:
+            if not theme:
+                return
+            status = self._apply_setting("theme", theme)
+            if "text-error" in status:  # unknown theme, or applied but not saved
+                self.notify(status, severity="error", timeout=8)
+            else:
+                self.notify(f"Theme: {escape(theme)} (saved)", timeout=3)
+
+        names = sorted(set(self.available_themes) | {self.theme})
+        self.push_screen(
+            PickerModal(
+                f"[b]Theme[/] [dim]({len(names)} available)[/]",
+                names,
+                self.theme,
+                "filter themes",
+                allow_typed=False,
+            ),
+            handle,
+        )
+
     def action_settings(self) -> None:
         self.push_screen(
             SettingsScreen(self.config, list(self.available_themes), self._apply_setting)
@@ -543,6 +583,11 @@ class RepoTuiApp(App):
         if confirmed:
             self.restart_requested = True
             self.exit()
+
+    def action_file_diff(self) -> None:
+        selected = self._selected_file()
+        if selected is not None:
+            self.run_worker(self._show_diff(*selected), exclusive=True, group="diff")
 
     async def _show_diff(self, project: Project, file) -> None:
         text = await to_thread(git_backend.read_file_diff, project, file)

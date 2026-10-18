@@ -235,6 +235,7 @@ The `?` help lists them the same way.
 | `enter` / `shift+F10` / right-click (on a project or file row) | open that project's or file's menu |
 | drag the `│` divider | resize the project list vs. the detail pane |
 | `?` | help |
+| `ctrl+p` | command palette — type part of a name ("abandon", "unshallow", "manifest", "blame", …) to find any action and run it; each shows its key. Offers only what fits: project actions need a selected project, file actions a file in the file list. Only opens on the main screen, never over a dialog or a running command |
 | `/` | filter projects by path/name |
 | `a` | toggle show-all vs. hide-unchanged |
 | `i` | toggle showing ignored files in the file list |

@@ -24,7 +24,7 @@ Group = List[Tuple[List[str], str]]
 
 # Keys that work wherever focus is, as groups separated by │.
 GLOBAL_GROUPS: list[Group] = [
-    [(["space"], "actions"), (["?"], "help")],
+    [(["space"], "actions"), (["ctrl+p"], "commands"), (["?"], "help")],
     [(["r", "R"], "refresh"), (["w"], "why"), (["u"], "last sync")],
     [(["/"], "filter"), (["a"], "all"), (["i"], "ignored")],
     [(["o"], "settings"), (["v", "U"], "check/update"), (["q"], "quit")],
