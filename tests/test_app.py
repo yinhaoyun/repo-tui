@@ -1097,7 +1097,7 @@ def test_every_key_hint_follows_the_highlight_setting(on):
     hints.set_highlight(on)
     for text in (top_level_hint(), help_text()):
         assert ("[b #000000 on $warning]" in text) is on
-    assert ("[b $text-warning]Press any key" in help_text()) is on
+    assert ("[b $text-warning]Scroll with" in help_text()) is on
 
 
 def test_refresh_selected_project_rescans_only_that_one(dirty_tree, monkeypatch):
@@ -1952,5 +1952,44 @@ def test_key_bar_shows_more_keys_when_the_terminal_grows(dirty_tree):
             await pilot.pause()
             assert "o settings" in str(keybar.render())
             assert "…" not in str(keybar.render())
+
+    asyncio.run(scenario())
+
+
+def test_help_scrolls_on_a_short_terminal_and_other_keys_close_it(dirty_tree):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(100, 20)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("?")
+            await pilot.pause()
+            help_screen = app.screen_stack[-1]
+            assert isinstance(help_screen, HelpModal)
+            box = help_screen.query_one("#help-box")
+            assert box.max_scroll_y > 0  # too long for 20 rows
+
+            await pilot.press("j", "j")
+            await pilot.pause()
+            assert box.scroll_y == 2
+            await pilot.press("G")
+            await pilot.pause()
+            assert box.scroll_y == box.max_scroll_y
+            await pilot.press("g")
+            await pilot.pause()
+            assert box.scroll_y == 0
+            await pilot.click("#help-text")  # inside the box: stays open
+            await pilot.pause()
+            assert app.screen_stack[-1] is help_screen
+
+            await pilot.press("x")  # anything else closes, as before
+            await pilot.pause()
+            assert not isinstance(app.screen_stack[-1], HelpModal)
+
+            await pilot.press("?")
+            await pilot.pause()
+            await pilot.click(offset=(0, 0))  # the dimmed background, outside the box
+            await pilot.pause()
+            assert not isinstance(app.screen_stack[-1], HelpModal)
 
     asyncio.run(scenario())

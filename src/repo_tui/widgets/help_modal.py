@@ -85,19 +85,53 @@ def help_text() -> str:
         "",
         tip("Tip: enter, shift+F10 or right-click on a project or file opens its menu."),
         tip('Tip: click "N changed", "last sync" or "⬆ repo-tui update" in the header.'),
-        tip("Press any key to close this help."),
+        tip("Scroll with ↑↓ / j/k, PgUp/PgDn, g/G; press any other key to close."),
     ]
     return "\n".join(lines)
 
 
+# key -> how the help scrolls; any other key closes it.
+_SCROLL_KEYS = {
+    "up": ("line", -1), "k": ("line", -1),
+    "down": ("line", 1), "j": ("line", 1),
+    "pageup": ("half", -1), "ctrl+u": ("half", -1),
+    "pagedown": ("half", 1), "ctrl+d": ("half", 1),
+    "home": ("end", -1), "g": ("end", -1),
+    "end": ("end", 1), "G": ("end", 1),
+}
+
+
 class HelpModal(ModalScreen[None]):
+    """Scrolls with the keys in _SCROLL_KEYS (and the mouse wheel), so it
+    can be read on a short terminal; any other key, or a click outside the
+    box, closes it."""
+
     def compose(self):
-        yield Vertical(Static(help_text(), id="help-text"), id="help-box")
+        box = Vertical(Static(help_text(), id="help-text"), id="help-box")
+        box.border_subtitle = (
+            f"{key('↑↓ j/k')} scroll  {key('g/G')} top/end  any other key closes"
+        )
+        yield box
 
     def on_key(self, event) -> None:  # noqa: ANN001 - textual event type
         event.stop()
         event.prevent_default()
-        self.dismiss(None)
+        how = _SCROLL_KEYS.get(event.character if event.character in ("g", "G") else event.key)
+        if how is None:
+            self.dismiss(None)
+            return
+        box = self.query_one("#help-box")
+        kind, direction = how
+        if kind == "line":
+            box.scroll_relative(y=direction, animate=False)
+        elif kind == "half":
+            half = max(1, box.scrollable_content_region.height // 2)
+            box.scroll_relative(y=direction * half, animate=False)
+        elif direction < 0:
+            box.scroll_home(animate=False)
+        else:
+            box.scroll_end(animate=False)
 
-    def on_click(self) -> None:
-        self.dismiss(None)
+    def on_click(self, event) -> None:  # noqa: ANN001 - textual event type
+        if event.widget is self:  # the dimmed background, not the box or its scrollbar
+            self.dismiss(None)
