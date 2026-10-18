@@ -209,6 +209,34 @@ def settings_path() -> Path:
     return Path.home() / ".config" / "repo-tui" / "settings.toml"
 
 
+_HISTORY_LIMIT = 50
+
+
+def history_path(name: str) -> Path:
+    """Where a prompt's history lives, next to settings.toml."""
+    return settings_path().parent / f"{name}_history"
+
+
+def load_history(name: str) -> list[str]:
+    """A prompt's earlier entries, oldest first ([] if there are none)."""
+    try:
+        return [line for line in history_path(name).read_text().splitlines() if line]
+    except OSError:
+        return []
+
+
+def add_history(name: str, entry: str) -> None:
+    """Remember `entry` as the newest, once, keeping the last _HISTORY_LIMIT.
+    History is a convenience: failing to save it is silently ignored."""
+    entries = [e for e in load_history(name) if e != entry] + [entry]
+    path = history_path(name)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(entries[-_HISTORY_LIMIT:]) + "\n")
+    except OSError:
+        pass
+
+
 def load_settings() -> dict[str, Any]:
     """Settings saved from the in-app menu; {} if none (or unreadable)."""
     try:

@@ -62,7 +62,7 @@ HELP_SECTIONS = [
         ("space K", "repo abandon — delete a branch in every project that has it (asks y/N)"),
         ("space x", "discard changes — revert to HEAD + delete untracked (asks y/N)"),
         ("space h", "unshallow — fetch the selected project's full history (asks y/N)"),
-        ("space f", "repo forall — run a shell command across projects"),
+        ("space f", "repo forall — a command (↑/↓: earlier ones), then: all / this / changed"),
         ("space M", "switch the tree's manifest branch/file (repo init -b -m + sync all)"),
         ("esc / space", "close the panel without doing anything"),
     ]),

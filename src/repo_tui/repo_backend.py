@@ -442,9 +442,14 @@ async def forall(
     paths: Optional[list[str]] = None,
     on_output: Optional[OutputCallback] = None,
 ) -> int:
-    """Run `repo forall [paths...] -c <command>`, streaming output."""
-    args = ["repo", "forall", *(paths or []), "-c", command]
-    return await _stream_subprocess(repo_root, args, on_output)
+    """Run `repo forall [paths...] -p -c <command>`, streaming output."""
+    return await _stream_subprocess(repo_root, forall_args(command, paths), on_output)
+
+
+def forall_args(command: str, paths: Optional[list[str]] = None) -> list[str]:
+    """argv for `repo forall`: in `paths` (default: every project), with
+    -p so each project's output is headed by its name."""
+    return ["repo", "forall", *(paths or []), "-p", "-c", command]
 
 
 async def start_branch(

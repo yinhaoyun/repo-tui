@@ -8,6 +8,7 @@ from repo_tui.repo_backend import (
     RepoTreeError,
     _stream_subprocess_tty,
     abandon_args,
+    forall_args,
     current_manifest_file,
     fetch_manifests,
     find_repo_root,
@@ -210,3 +211,8 @@ def test_switch_manifest_inits_then_syncs_unless_init_fails(tmp_path, monkeypatc
             "ran: init -b android-15 -m car.xml",
             "ran: sync --current-branch -j4",
         ]
+
+
+def test_forall_args_head_each_projects_output():
+    assert forall_args("git log -1") == ["repo", "forall", "-p", "-c", "git log -1"]
+    assert forall_args("pwd", ["a", "b"]) == ["repo", "forall", "a", "b", "-p", "-c", "pwd"]

@@ -260,7 +260,7 @@ and the focus line's menu key always stay, and the full list is in `?`.
 | `Space` then `K` | `repo abandon <branch>` across the tree — delete a branch (e.g. one made with `repo start --all`) in every project that has it (pick from a list with how many projects have each; asks y/N first) |
 | `Space` then `x` | discard the selected project's changes so its Stat is clean: tracked changes revert to HEAD, untracked files are deleted; files hidden by your ignore rules, commits and the branch are kept (asks y/N first) |
 | `Space` then `h` | unshallow the selected project only: `git fetch --unshallow <remote>` to get its full history (asks y/N first; also in the right-click menu of a shallow project) |
-| `Space` then `f` | `repo forall -c <command>` across the tree (prompts for the command) |
+| `Space` then `f` | `repo forall -p -c <command>` — prompts for the command (`↑`/`↓` recall earlier ones, kept in `~/.config/repo-tui/forall_history`), then where to run it: every project (the first choice, so `enter` `enter` works as before), the selected project, or just the changed ones. `-p` heads each project's output with its name |
 | `Space` then `M` | switch the whole tree to another manifest branch and/or manifest file: `repo init -b <branch> -m <file>`, then `repo sync` everything (see below) |
 | `Esc` / `Space` (in the panel) | close the action panel without doing anything |
 

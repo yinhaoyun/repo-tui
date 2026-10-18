@@ -1696,23 +1696,72 @@ class RepoTuiApp(App):
         )
 
     def action_forall(self) -> None:
+        """Space f: a command (↑/↓ recall earlier ones), then where to run
+        it -- every project, this one, or the changed ones."""
+
         def handle(command: str | None) -> None:
-            if not command:
-                return
-            self.run_worker(
-                self._run_and_refresh(
-                    f"forall: {command}",
-                    lambda on_output, _progress: repo_backend.forall(
-                        self.repo_root, command, on_output=on_output
-                    ),
-                ),
-                exclusive=True,
-                group="forall",
-            )
+            command = (command or "").strip()
+            if command:
+                config_mod.add_history("forall", command)
+                self._pick_forall_scope(command)
 
         self.push_screen(
-            PromptModal("Command to run in every project (repo forall -c):", "e.g. git log -1"),
+            PromptModal(
+                "Command to run with repo forall -c (you pick where next):",
+                "e.g. git log -1 --oneline",
+                history=config_mod.load_history("forall"),
+            ),
             handle,
+        )
+
+    def _pick_forall_scope(self, command: str) -> None:
+        project = self._selected_project()
+        changed = [p for p in self.projects if p.is_changed and not p.error]
+        scopes = {"tree": (None, None, f"every project ({len(self.projects)})")}
+        if project is not None:
+            scopes["project"] = ([project.path], project, project.path)
+        if changed:
+            scopes["changed"] = (
+                [p.path for p in changed], None, f"{len(changed)} changed project(s)"
+            )
+        if len(scopes) == 1:
+            self._run_forall(command, *scopes["tree"])
+            return
+        labels = {
+            "tree": f"Every project ({len(self.projects)})",
+            "project": f"This project — {project.path}" if project else "",
+            "changed": f"Changed projects ({len(changed)})",
+        }
+
+        def handle(scope: str | None) -> None:
+            if scope:
+                self._run_forall(command, *scopes[scope])
+
+        self.push_screen(
+            ContextMenu(
+                f"Run [b]{escape(command)}[/] in…", [(k, labels[k]) for k in scopes]
+            ),
+            handle,
+        )
+
+    def _run_forall(
+        self, command: str, paths: list[str] | None, project: Project | None, where: str
+    ) -> None:
+        many = paths is not None and len(paths) > 3  # don't list dozens in the dialog
+        shown = shlex.join(repo_backend.forall_args(command, None if many else paths))
+        if many:
+            shown = shown.replace("repo forall", f"repo forall <{len(paths)} projects>", 1)
+        self.run_worker(
+            self._run_and_refresh(
+                f"forall ({where}): {command}",
+                lambda on_output, _progress: repo_backend.forall(
+                    self.repo_root, command, paths, on_output=on_output
+                ),
+                command=shown,
+                project=project,
+            ),
+            exclusive=True,
+            group="forall",
         )
 
     def action_start_branch(self) -> None:

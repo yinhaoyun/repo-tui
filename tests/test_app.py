@@ -2048,3 +2048,56 @@ def test_fetch_all_shows_what_a_sync_would_bring_in(dirty_tree, monkeypatch, ups
             assert app.sync_report is None
 
     asyncio.run(scenario())
+
+
+def test_forall_picks_where_and_remembers_the_command(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        calls = []
+
+        async def fake_forall(repo_root, command, paths=None, on_output=None):
+            calls.append((command, paths))
+            return 0
+
+        monkeypatch.setattr(repo_backend, "forall", fake_forall)
+
+        async def run(command, scope_keys):
+            await pilot.press("space", "f")
+            await pilot.pause()
+            assert isinstance(app.screen_stack[-1], PromptModal)
+            await pilot.press(*command, "enter")
+            await pilot.pause()
+            menu = app.screen_stack[-1]
+            assert isinstance(menu, ContextMenu)
+            assert [o.id for o in menu.query_one("OptionList")._options] == [
+                "tree", "project", "changed"
+            ]
+            await pilot.press(*scope_keys)
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.press("escape")  # the output screen
+            await pilot.pause()
+
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            # frameworks/base is the only changed project (and selected)
+            await run("git log -1", ["down", "down", "enter"])
+            assert calls[-1] == ("git log -1", ["frameworks/base"])
+            await run("pwd", ["enter"])  # Enter twice: the whole tree, as before
+            assert calls[-1] == ("pwd", None)
+
+            await pilot.press("space", "f")
+            await pilot.pause()
+            prompt = app.screen_stack[-1]
+            field = prompt.query_one("#prompt-input")
+            await pilot.press(*"half")
+            await pilot.press("up")
+            assert field.value == "pwd"
+            await pilot.press("up")
+            assert field.value == "git log -1"
+            await pilot.press("down", "down")
+            assert field.value == "half"  # back to what was being typed
+
+    asyncio.run(scenario())

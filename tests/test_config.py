@@ -84,3 +84,28 @@ def test_saved_settings_of_every_type_round_trip(tmp_path):
     save_setting("confirm_sync_all", True)
     cfg = load_config(tmp_path)
     assert (cfg.theme, cfg.sync_jobs, cfg.confirm_sync_all) == ("gruvbox", 6, True)
+
+
+def test_prompt_history_keeps_newest_once_and_a_limit(tmp_path, monkeypatch):
+    from repo_tui import config as config_mod
+
+    monkeypatch.setenv("REPO_TUI_SETTINGS", str(tmp_path / "cfg" / "settings.toml"))
+    assert config_mod.load_history("forall") == []
+    for entry in ("git status", "git log -1", "git status"):
+        config_mod.add_history("forall", entry)
+    assert config_mod.load_history("forall") == ["git log -1", "git status"]
+    for i in range(60):
+        config_mod.add_history("forall", f"cmd {i}")
+    history = config_mod.load_history("forall")
+    assert len(history) == 50 and history[-1] == "cmd 59"
+    assert (tmp_path / "cfg" / "forall_history").is_file()
+
+
+def test_prompt_history_failing_to_save_is_ignored(tmp_path, monkeypatch):
+    from repo_tui import config as config_mod
+
+    blocker = tmp_path / "file"
+    blocker.write_text("")
+    monkeypatch.setenv("REPO_TUI_SETTINGS", str(blocker / "settings.toml"))
+    config_mod.add_history("forall", "git status")  # parent is a file: no crash
+    assert config_mod.load_history("forall") == []
