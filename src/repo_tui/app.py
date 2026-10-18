@@ -39,7 +39,12 @@ from .widgets.header_bar import HeaderBar
 from .widgets.help_modal import HelpModal
 from .widgets.keybar import KeyBar
 from .widgets.picker_modal import PickerModal
-from .widgets.project_list import ProjectContextMenuRequested, ProjectHighlighted, ProjectList
+from .widgets.project_list import (
+    MarksChanged,
+    ProjectContextMenuRequested,
+    ProjectHighlighted,
+    ProjectList,
+)
 from .widgets.prompt_modal import PromptModal
 from .widgets.result_screen import ResultScreen
 from .widgets.settings_screen import SettingsScreen
@@ -153,6 +158,26 @@ class RepoTuiApp(App):
     def _selected_project(self) -> Project | None:
         return self.query_one("#project-list", ProjectList).project_at_cursor()
 
+    def _marked_projects(self) -> list[Project]:
+        marked = self.query_one("#project-list", ProjectList).marked
+        return [p for p in self.projects if p.path in marked]
+
+    def _targets(self) -> list[Project]:
+        """What Space's project actions act on: the marked projects, else
+        the one at the cursor (none if the list is empty)."""
+        marked = self._marked_projects()
+        if marked:
+            return marked
+        project = self._selected_project()
+        return [project] if project is not None else []
+
+    def _unmark(self, projects: list[Project]) -> None:
+        """Marks are used up by the action that acted on them."""
+        project_list = self.query_one("#project-list", ProjectList)
+        left = project_list.marked - {p.path for p in projects}
+        if left != project_list.marked:
+            project_list.set_marks(left)
+
     async def _refresh(
         self, busy: BusyModal | None = None, only: list[Project] | None = None
     ) -> None:
@@ -238,6 +263,9 @@ class RepoTuiApp(App):
         if widget.id in context:
             self.query_one("#keybar", KeyBar).show_top_level(context[widget.id])
 
+    def on_marks_changed(self, message: MarksChanged) -> None:
+        self.query_one("#keybar", KeyBar).show_top_level(marked=message.count)
+
     def on_project_highlighted(self, message: ProjectHighlighted) -> None:
         self.query_one("#detail-pane", DetailPane).show_project(
             message.project, self.show_ignored
@@ -290,9 +318,11 @@ class RepoTuiApp(App):
         self.run_worker(self._refresh(), exclusive=True, group="refresh")
 
     def action_refresh_project(self) -> None:
-        project = self._selected_project()
-        if project is not None:
-            self._refresh_project(project)
+        """r: rescan the marked projects, else the selected one. Rescanning
+        changes nothing, so the marks stay."""
+        targets = self._targets()
+        if targets:
+            self.run_worker(self._refresh(only=targets), exclusive=True, group="refresh")
 
     def _refresh_project(self, project: Project) -> None:
         """Re-scan just this project, e.g. after editing it outside repo-tui."""
@@ -821,6 +851,7 @@ class RepoTuiApp(App):
         command: str = "",
         jobs: int | None = None,
         project: Project | None = None,
+        only: list[Project] | None = None,
         track_updates: bool = False,
         open_report: bool = False,
         reload_tree: bool = False,
@@ -831,7 +862,8 @@ class RepoTuiApp(App):
         error/warning lines, plus a toast when there were problems.
         `coro_factory(on_output, on_progress)` starts the command;
         `command`/`jobs` are only shown in the dialog. With `project`, only
-        that project is re-scanned afterwards. With `track_updates` (sync,
+        that project is re-scanned afterwards; with `only`, just those
+        projects, which are also unmarked (the action used their marks). With `track_updates` (sync,
         detach), each project's HEAD is recorded before and compared after,
         and what moved becomes the new sync report; `open_report` (plain
         syncs only: after a detach or manifest switch, moved commits are
@@ -846,7 +878,10 @@ class RepoTuiApp(App):
         busy = BusyModal(title, command=command, jobs=jobs)
         await self.push_screen(busy)
         log_lines: list[str] = []
-        targets = [project] if project else list(self.projects)
+        scoped = only if only else ([project] if project else None)
+        targets = scoped or list(self.projects)
+        if only:
+            self._unmark(only)
         before: dict[str, str] = {}
         report: SyncReport | None = None
         if track_updates:
@@ -875,7 +910,7 @@ class RepoTuiApp(App):
                 report = await self._compare_upstream(busy, title, returncode, targets)
             if reload_tree:
                 log_lines += self._reload_tree()
-            await self._refresh(busy, only=[project] if project else None)
+            await self._refresh(busy, only=scoped)
         finally:
             header.set_syncing(False)
             await busy.dismiss()
@@ -993,20 +1028,18 @@ class RepoTuiApp(App):
             project_list.select_path(path)
         project_list.focus()
 
-    def _sync_project(self, project: Project) -> None:
+    def _sync_projects(self, projects: list[Project]) -> None:
+        paths = [p.path for p in projects]
+        jobs = self.config.sync_jobs
         self.run_worker(
             self._run_and_refresh(
-                f"repo sync: {project.path}",
+                f"repo sync: {_where(projects)}",
                 lambda on_output, on_progress: repo_backend.sync_projects(
-                    self.repo_root,
-                    [project.path],
-                    on_output=on_output,
-                    on_progress=on_progress,
-                    jobs=self.config.sync_jobs,
+                    self.repo_root, paths, on_output=on_output, on_progress=on_progress, jobs=jobs
                 ),
-                command=" ".join(repo_backend.sync_args([project.path], self.config.sync_jobs)),
-                jobs=self.config.sync_jobs,
-                project=project,
+                command=_shown_command(repo_backend.sync_args(paths, jobs), paths),
+                jobs=jobs,
+                only=projects,
                 track_updates=True,
                 open_report=True,
             ),
@@ -1051,62 +1084,65 @@ class RepoTuiApp(App):
             group="sync",
         )
 
-    def _detach_project(self, project: Project) -> None:
+    def _detach_projects(self, projects: list[Project]) -> None:
+        paths = [p.path for p in projects]
+        jobs = self.config.sync_jobs
         self.run_worker(
             self._run_and_refresh(
-                f"repo sync -d: {project.path}",
+                f"repo sync -d: {_where(projects)}",
                 lambda on_output, on_progress: repo_backend.sync_detach(
-                    self.repo_root,
-                    [project.path],
-                    on_output=on_output,
-                    on_progress=on_progress,
-                    jobs=self.config.sync_jobs,
+                    self.repo_root, paths, on_output=on_output, on_progress=on_progress, jobs=jobs
                 ),
-                command=" ".join(
-                    repo_backend.sync_args([project.path], self.config.sync_jobs, detach=True)
-                ),
-                jobs=self.config.sync_jobs,
-                project=project,
+                command=_shown_command(repo_backend.sync_args(paths, jobs, detach=True), paths),
+                jobs=jobs,
+                only=projects,
                 track_updates=True,
             ),
             exclusive=True,
             group="sync",
         )
 
-    def _checkout_branch(self, project: Project, branch: str) -> None:
+    def _checkout_branch(self, projects: list[Project], branch: str) -> None:
+        paths = [p.path for p in projects]
         self.run_worker(
             self._run_and_refresh(
-                f"repo checkout {branch}: {project.path}",
+                f"repo checkout {branch}: {_where(projects)}",
                 lambda on_output, _progress: repo_backend.checkout_branch(
-                    self.repo_root, branch, [project.path], on_output=on_output
+                    self.repo_root, branch, paths, on_output=on_output
                 ),
-                project=project,
+                only=projects,
             ),
             exclusive=True,
             group="branch",
         )
 
-    def _prompt_switch_branch(self, project: Project) -> None:
-        other_branches = [b for b in project.local_branches if b != project.current_branch]
+    def _prompt_switch_branch(self, projects: list[Project]) -> None:
+        """Pick a local branch to switch to. For several (marked) projects,
+        each branch says how many have it, and only those switch."""
+        holders: dict[str, list[Project]] = {}
+        for p in projects:
+            for b in p.local_branches:
+                if b != p.current_branch:
+                    holders.setdefault(b, []).append(p)
+        where = _where(projects)
 
-        if other_branches:
+        if holders:
 
             def handle_choice(branch: str | None) -> None:
                 if branch:
-                    self._checkout_branch(project, branch)
+                    self._checkout_branch(holders[branch], branch)
 
-            self.push_screen(
-                ContextMenu(
-                    f"Switch branch — {project.path}",
-                    [(b, b) for b in other_branches],
-                ),
-                handle_choice,
-            )
+            names = sorted(holders, key=lambda b: (-len(holders[b]), b))
+            if len(projects) == 1:
+                options = [(b, b) for b in names]
+            else:
+                options = [(b, f"{b}  — {len(holders[b])} of {len(projects)}") for b in names]
+            self.push_screen(ContextMenu(f"Switch branch — {where}", options), handle_choice)
         else:
             self._prompt_branch_name(
-                f"{project.path} has no other local branches. "
+                f"{where} {'has' if len(projects) == 1 else 'have'} no other local branches. "
                 "Type an existing topic branch name to switch to:",
-                lambda branch: self._checkout_branch(project, branch),
+                lambda branch: self._checkout_branch(projects, branch),
             )
 
     def _prompt_branch_name(self, prompt: str, on_name, value: str = "") -> None:
@@ -1126,21 +1162,23 @@ class RepoTuiApp(App):
 
         self.push_screen(PromptModal(prompt, "branch name", value), handle)
 
-    def _prompt_start_branch(self, project: Project) -> None:
+    def _prompt_start_branch(self, projects: list[Project]) -> None:
+        paths = [p.path for p in projects]
+
         def start(branch: str) -> None:
             self.run_worker(
                 self._run_and_refresh(
-                    f"repo start {branch}: {project.path}",
+                    f"repo start {branch}: {_where(projects)}",
                     lambda on_output, _progress: repo_backend.start_branch(
-                        self.repo_root, branch, [project.path], on_output=on_output
+                        self.repo_root, branch, paths, on_output=on_output
                     ),
-                    project=project,
+                    only=projects,
                 ),
                 exclusive=True,
                 group="branch",
             )
 
-        self._prompt_branch_name(f"New branch name for {project.path}:", start)
+        self._prompt_branch_name(f"New branch name for {_where(projects)}:", start)
 
     # -- abandon (delete) local branches: Space k (project), Space K (tree)
 
@@ -1177,15 +1215,20 @@ class RepoTuiApp(App):
 
         self.push_screen(ContextMenu(f"Abandon branch — {project.path}", options), handle)
 
-    def _prompt_abandon_tree(self) -> None:
+    def _prompt_abandon_tree(self, projects: list[Project] | None = None) -> None:
         """Space K: pick a branch name and delete it in every project that
-        has it, e.g. a topic branch made with repo start --all."""
+        has it, e.g. a topic branch made with repo start --all. With
+        `projects` (the marked ones), only among those."""
         holders: dict[str, list[Project]] = {}
-        for p in self.projects:
+        for p in projects if projects is not None else self.projects:
             for b in p.local_branches:
                 holders.setdefault(b, []).append(p)
         if not holders:
-            self.notify("No project has a local branch.", timeout=4)
+            self.notify(
+                "No project has a local branch." if projects is None
+                else f"None of the {len(projects)} marked projects has a local branch.",
+                timeout=4,
+            )
             return
         names = sorted(holders, key=lambda b: (-len(holders[b]), b))
         options = [(b, f"{b}  — {len(holders[b])} project(s)") for b in names]
@@ -1193,9 +1236,14 @@ class RepoTuiApp(App):
         def handle(branch: str | None) -> None:
             if branch:
                 pairs = [(p, branch) for p in holders[branch]]
-                self._abandon(f"{len(pairs)} project(s)", pairs, branch, None)
+                paths = None if projects is None else [p.path for p in holders[branch]]
+                self._abandon(f"{len(pairs)} project(s)", pairs, branch, paths)
 
-        self.push_screen(ContextMenu("Abandon a branch in every project", options), handle)
+        title = (
+            "Abandon a branch in every project" if projects is None
+            else f"Abandon a branch in the {len(projects)} marked projects"
+        )
+        self.push_screen(ContextMenu(title, options), handle)
 
     def _abandon(
         self,
@@ -1273,7 +1321,7 @@ class RepoTuiApp(App):
         def handle(confirmed: bool | None) -> None:
             if not confirmed:
                 return
-            single = pairs[0][0] if paths and len(paths) == 1 else None
+            scoped = list({p.path: p for p, _ in pairs}.values()) if paths else None
             self.run_worker(
                 self._run_and_refresh(
                     f"repo abandon {branch or '--all'}: {where}",
@@ -1281,7 +1329,7 @@ class RepoTuiApp(App):
                         self.repo_root, branch, paths, on_output=on_output
                     ),
                     command=command,
-                    project=single,
+                    only=scoped,
                 ),
                 exclusive=True,
                 group="branch",
@@ -1289,15 +1337,31 @@ class RepoTuiApp(App):
 
         self.push_screen(ConfirmModal(title, body), handle)
 
-    def _discard_changes(self, project: Project) -> None:
-        files = [f for f in project.files if not f.ignored]
-        if not files:
-            self.notify(f"{project.path} is already clean")
+    def _discard_changes(self, projects: list[Project]) -> None:
+        dirty = [(p, [f for f in p.files if not f.ignored]) for p in projects]
+        dirty = [(p, files) for p, files in dirty if files]
+        where = _where(projects)
+        if not dirty:
+            self.notify(f"{escape(where)} {'is' if len(projects) == 1 else 'are'} already clean")
             return
-        untracked = sum(1 for f in files if f.is_untracked)
-        shown = "\n".join(f"  {escape(f.code)}  {escape(f.path)}" for f in files[:12])
-        if len(files) > 12:
-            shown += f"\n  …and {len(files) - 12} more"
+        total = sum(len(files) for _, files in dirty)
+        untracked = sum(1 for _, files in dirty for f in files if f.is_untracked)
+        if len(dirty) == 1:
+            files = dirty[0][1]
+            shown = "\n".join(f"  {escape(f.code)}  {escape(f.path)}" for f in files[:12])
+            if len(files) > 12:
+                shown += f"\n  …and {len(files) - 12} more"
+        else:
+            rows = []
+            for p, files in dirty:
+                new = sum(1 for f in files if f.is_untracked)
+                rows.append(
+                    f"  {escape(p.path)}  {len(files)} file(s)"
+                    + (f", {new} untracked" if new else "")
+                )
+            shown = "\n".join(rows[:12]) + (
+                f"\n  …and {len(rows) - 12} more projects" if len(rows) > 12 else ""
+            )
         body = (
             f"{shown}\n\n"
             f"Tracked changes are reverted to HEAD"
@@ -1306,29 +1370,34 @@ class RepoTuiApp(App):
         )
 
         async def discard(on_output, _progress) -> int:
-            returncode, lines = await to_thread(git_backend.discard_changes, project)
-            for line in lines:
-                await on_output(line)
-            return returncode
+            worst = 0
+            for p, _ in dirty:
+                returncode, lines = await to_thread(git_backend.discard_changes, p)
+                prefix = f"{p.path}: " if len(dirty) > 1 else ""
+                for line in lines:
+                    await on_output(prefix + line)
+                worst = worst or returncode
+            return worst
 
         def handle(confirmed: bool | None) -> None:
             if not confirmed:
                 return
             self.run_worker(
                 self._run_and_refresh(
-                    f"discard changes: {project.path}",
+                    f"discard changes: {where}",
                     discard,
                     command="git restore --source=HEAD --staged --worktree … && git clean -f …",
-                    project=project,
+                    only=projects,
                 ),
                 exclusive=True,
                 group="discard",
             )
 
-        self.push_screen(
-            ConfirmModal(f"Discard {len(files)} changed file(s) in {project.path}?", body),
-            handle,
-        )
+        if len(dirty) == 1:
+            title = f"Discard {total} changed file(s) in {escape(dirty[0][0].path)}?"
+        else:
+            title = f"Discard {total} changed file(s) in {len(dirty)} projects?"
+        self.push_screen(ConfirmModal(title, body), handle)
 
     def _unshallow_project(self, project: Project) -> None:
         """Fetch one project's full history, after a y/N that says what it
@@ -1417,17 +1486,17 @@ class RepoTuiApp(App):
             if choice == "refresh":
                 self._refresh_project(project)
             elif choice == "sync":
-                self._sync_project(project)
+                self._sync_projects([project])
             elif choice == "detach":
-                self._detach_project(project)
+                self._detach_projects([project])
             elif choice == "switch":
-                self._prompt_switch_branch(project)
+                self._prompt_switch_branch([project])
             elif choice == "start":
-                self._prompt_start_branch(project)
+                self._prompt_start_branch([project])
             elif choice == "abandon":
                 self._prompt_abandon_branch(project)
             elif choice == "discard":
-                self._discard_changes(project)
+                self._discard_changes([project])
             elif choice == "copy":
                 self._copy_project_path(project)
             elif choice == "unshallow":
@@ -1443,6 +1512,7 @@ class RepoTuiApp(App):
 
     def action_open_action_panel(self) -> None:
         project = self._selected_project()
+        marked = self._marked_projects()
 
         def handle(action: str | None) -> None:
             if action:
@@ -1452,15 +1522,19 @@ class RepoTuiApp(App):
         file = None
         if isinstance(self.focused, FileTable):
             file = self.focused.file_at_cursor()
-        self.push_screen(
-            ActionPanel(project.path if project else None, file.path if file else None),
-            handle,
-        )
+        heading = "This project"
+        if marked:
+            names = ", ".join(p.path for p in marked[:3]) + (" …" if len(marked) > 3 else "")
+            target = f"{len(marked)} marked projects ({names})"
+            heading = f"{len(marked)} marked projects"
+        else:
+            target = project.path if project else None
+        self.push_screen(ActionPanel(target, file.path if file else None, heading), handle)
 
     def action_sync_selected(self) -> None:
-        project = self._selected_project()
-        if project is not None:
-            self._sync_project(project)
+        targets = self._targets()
+        if targets:
+            self._sync_projects(targets)
 
     def action_sync_all(self) -> None:
         self._sync_all()
@@ -1485,9 +1559,9 @@ class RepoTuiApp(App):
         )
 
     def action_detach(self) -> None:
-        project = self._selected_project()
-        if project is not None:
-            self._detach_project(project)
+        targets = self._targets()
+        if targets:
+            self._detach_projects(targets)
 
     # -- switch manifest branch / file (whole tree) ----------------------
 
@@ -1717,17 +1791,22 @@ class RepoTuiApp(App):
     def _pick_forall_scope(self, command: str) -> None:
         project = self._selected_project()
         changed = [p for p in self.projects if p.is_changed and not p.error]
-        scopes = {"tree": (None, None, f"every project ({len(self.projects)})")}
+        marked = self._marked_projects()
+        scopes = {}
+        if marked:  # what was marked for this comes first
+            scopes["marked"] = ([p.path for p in marked], marked, f"{len(marked)} marked")
+        scopes["tree"] = (None, None, f"every project ({len(self.projects)})")
         if project is not None:
-            scopes["project"] = ([project.path], project, project.path)
+            scopes["project"] = ([project.path], [project], project.path)
         if changed:
             scopes["changed"] = (
-                [p.path for p in changed], None, f"{len(changed)} changed project(s)"
+                [p.path for p in changed], changed, f"{len(changed)} changed project(s)"
             )
         if len(scopes) == 1:
             self._run_forall(command, *scopes["tree"])
             return
         labels = {
+            "marked": f"Marked projects ({len(marked)})",
             "tree": f"Every project ({len(self.projects)})",
             "project": f"This project — {project.path}" if project else "",
             "changed": f"Changed projects ({len(changed)})",
@@ -1745,7 +1824,11 @@ class RepoTuiApp(App):
         )
 
     def _run_forall(
-        self, command: str, paths: list[str] | None, project: Project | None, where: str
+        self,
+        command: str,
+        paths: list[str] | None,
+        projects: list[Project] | None,
+        where: str,
     ) -> None:
         many = paths is not None and len(paths) > 3  # don't list dozens in the dialog
         shown = shlex.join(repo_backend.forall_args(command, None if many else paths))
@@ -1758,44 +1841,67 @@ class RepoTuiApp(App):
                     self.repo_root, command, paths, on_output=on_output
                 ),
                 command=shown,
-                project=project,
+                only=projects,
             ),
             exclusive=True,
             group="forall",
         )
 
     def action_start_branch(self) -> None:
-        project = self._selected_project()
-        if project is not None:
-            self._prompt_start_branch(project)
+        targets = self._targets()
+        if targets:
+            self._prompt_start_branch(targets)
 
     def action_abandon_branch(self) -> None:
-        project = self._selected_project()
-        if project is not None:
-            self._prompt_abandon_branch(project)
+        targets = self._targets()
+        if len(targets) == 1:
+            self._prompt_abandon_branch(targets[0])
+        elif targets:
+            self._prompt_abandon_tree(targets)
 
     def action_abandon_tree(self) -> None:
         self._prompt_abandon_tree()
 
     def action_switch_branch(self) -> None:
-        project = self._selected_project()
-        if project is not None:
-            self._prompt_switch_branch(project)
+        targets = self._targets()
+        if targets:
+            self._prompt_switch_branch(targets)
 
     def action_unshallow(self) -> None:
+        if self._marked_projects():
+            self.notify(
+                "Unshallow fetches a project's whole history, often gigabytes, so it "
+                "works on one project at a time: clear the marks (esc) first.",
+                severity="warning",
+                timeout=8,
+            )
+            return
         project = self._selected_project()
         if project is not None:
             self._unshallow_project(project)
 
     def action_discard(self) -> None:
-        project = self._selected_project()
-        if project is not None:
-            self._discard_changes(project)
+        targets = self._targets()
+        if targets:
+            self._discard_changes(targets)
 
     def action_copy_path(self) -> None:
         project = self._selected_project()
         if project is not None:
             self._copy_project_path(project)
+
+
+def _where(projects: list[Project]) -> str:
+    """A project's path, or "N projects" for several, for titles."""
+    return projects[0].path if len(projects) == 1 else f"{len(projects)} projects"
+
+
+def _shown_command(argv: list[str], paths: list[str]) -> str:
+    """argv for a dialog, without listing dozens of project paths."""
+    if len(paths) <= 3:
+        return " ".join(argv)
+    rest = [a for a in argv if a not in set(paths)]
+    return " ".join(rest + [f"<{len(paths)} projects>"])
 
 
 def _bad_name(value: str, what: str) -> str:

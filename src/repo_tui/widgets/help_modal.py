@@ -19,6 +19,8 @@ HELP_SECTIONS = [
     ]),
     ("Project list — while it has focus", [
         ("y", "copy (yank) the selected project's absolute path"),
+        ("m", "mark / unmark the project (and move down); space actions then act on the marks"),
+        ("M, esc", "M: mark every shown project, or clear the marks; esc: clear them"),
         ("enter, shift+F10", "the project's actions as a menu (also right-click)"),
     ]),
     ("Global — anywhere; never changes a checkout (lowercase: this project, Shift: whole tree)", [

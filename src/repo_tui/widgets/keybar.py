@@ -42,8 +42,8 @@ GLOBAL_GROUPS: list[Group] = [
 # Focus contexts: (label, keys) for whatever has focus.
 FOCUS_CONTEXTS: dict[str, tuple[str, Group]] = {
     "projects": ("PROJECT LIST", [
-        (["↑↓"], "select", 3), (["enter", "shift+f10"], "menu", 1), (["tab"], "to files", 2),
-        (["y"], "copy project path", 2),
+        (["↑↓"], "select", 3), (["enter", "shift+f10"], "menu", 1), (["m"], "mark", 2),
+        (["M"], "all/none", 3), (["tab"], "to files", 2), (["y"], "copy project path", 3),
     ]),
     "files": ("FILE LIST", [
         (["↑↓"], "select", 3), (["enter", "shift+f10"], "menu", 1), (["click"], "diff", 3),
@@ -110,8 +110,14 @@ def _line(label_markup: str, label: str, groups: list[Group], width: Optional[in
     return f"{label_markup} {body}" + (f"[dim]{_MORE}[/]" if dropped else "")
 
 
-def focus_hint(context: str, width: Optional[int] = None) -> str:
+def focus_hint(context: str, width: Optional[int] = None, marked: int = 0) -> str:
+    """The focus line; with `marked` projects, its label says so (Space's
+    project actions then act on them), and esc clears them."""
     label, group = FOCUS_CONTEXTS[context]
+    if marked:
+        label += f" · {marked} marked"
+        if context == "projects":
+            group = [(["esc"], "unmark", 1)] + group
     return _line(f"[b $background on $accent] {label} [/]", label, [group], width)
 
 
@@ -119,21 +125,26 @@ def global_hint(width: Optional[int] = None) -> str:
     return _line("[b $text-muted on $surface] GLOBAL [/]", "GLOBAL", GLOBAL_GROUPS, width)
 
 
-def top_level_hint(context: str = "projects", width: Optional[int] = None) -> str:
-    return focus_hint(context, width) + "\n" + global_hint(width)
+def top_level_hint(
+    context: str = "projects", width: Optional[int] = None, marked: int = 0
+) -> str:
+    return focus_hint(context, width, marked) + "\n" + global_hint(width)
 
 
 class KeyBar(Static):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.context = "projects"
+        self.marked = 0
 
-    def show_top_level(self, context: str | None = None) -> None:
+    def show_top_level(self, context: str | None = None, marked: int | None = None) -> None:
         """Re-render for the bar's width; with `context`, for that focus
-        context."""
+        context; with `marked`, for that many marked projects."""
         if context is not None:
             self.context = context
-        self.update(top_level_hint(self.context, self.size.width or None))
+        if marked is not None:
+            self.marked = marked
+        self.update(top_level_hint(self.context, self.size.width or None, self.marked))
 
     def on_resize(self) -> None:
         self.show_top_level()

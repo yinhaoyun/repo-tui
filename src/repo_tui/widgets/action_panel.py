@@ -47,9 +47,10 @@ FILE_ACTION_KEYS = {key: action for key, action, _ in FILE_ACTIONS}
 EXIT_KEYS = {"escape", "space"}
 
 
-def _keys_text(with_file: bool = False) -> str:
+def _keys_text(with_file: bool = False, project_heading: str = "This project") -> str:
     """Columns ("This file" | "This project" | "Whole tree") as padded
-    markup lines; "This file" only `with_file`."""
+    markup lines; "This file" only `with_file`. `project_heading` names
+    what the project actions act on (e.g. "3 marked projects")."""
 
     def cells(title: str, actions: list[tuple[str, str, str]]) -> list[tuple[str, int]]:
         # (markup, visible width) pairs so columns can be padded by hand.
@@ -58,7 +59,7 @@ def _keys_text(with_file: bool = False) -> str:
                 for k, _, label in actions]
         return out
 
-    columns = [cells("This project", PROJECT_ACTIONS), cells("Whole tree", TREE_ACTIONS)]
+    columns = [cells(project_heading, PROJECT_ACTIONS), cells("Whole tree", TREE_ACTIONS)]
     if with_file:
         columns.insert(0, cells("This file", FILE_ACTIONS))
     widths = [max(w for _, w in column) + 6 for column in columns]
@@ -73,15 +74,24 @@ def _keys_text(with_file: bool = False) -> str:
 
 
 class ActionPanel(ModalScreen[Optional[str]]):
-    def __init__(self, target: str | None, file_target: str | None = None) -> None:
+    def __init__(
+        self,
+        target: str | None,
+        file_target: str | None = None,
+        project_heading: str = "This project",
+    ) -> None:
         self._target = target
         self._file_target = file_target
+        self._project_heading = project_heading
         self._keys = {**ACTION_KEYS, **(FILE_ACTION_KEYS if file_target else {})}
         super().__init__()
 
     def compose(self):
         box = Vertical(
-            Static(_keys_text(with_file=self._file_target is not None), id="action-keys"),
+            Static(
+                _keys_text(self._file_target is not None, self._project_heading),
+                id="action-keys",
+            ),
             id="action-box",
         )
         target = self._target or "(no project selected)"

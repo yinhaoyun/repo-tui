@@ -448,7 +448,7 @@ def test_detach_uses_the_sync_jobs_setting(dirty_tree, monkeypatch):
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             await app.workers.wait_for_complete()
-            app._detach_project(next(p for p in app.projects if p.path == "build/make"))
+            app._detach_projects([next(p for p in app.projects if p.path == "build/make")])
             await pilot.pause()
             await app.workers.wait_for_complete()
             assert jobs == [3]
@@ -1219,7 +1219,7 @@ def test_sync_report_does_not_open_itself_when_off_or_after_detach(dirty_tree, m
             await app.workers.wait_for_complete()
 
             # a detach moves HEAD on purpose: output screen, report via u only
-            app._detach_project(next(p for p in app.projects if p.path == "build/make"))
+            app._detach_projects([next(p for p in app.projects if p.path == "build/make")])
             await pilot.pause()
             await app.workers.wait_for_complete()
             await pilot.pause()

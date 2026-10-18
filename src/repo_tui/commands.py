@@ -3,7 +3,8 @@ found by name ("abandon", "unshallow", "manifest") instead of by key. Each
 command's help ends with its key, so the palette also teaches the keys.
 
 Only what fits the moment is offered: project commands need a selected
-project, unshallow a shallow one, file commands a file in the file list."""
+project (or marked ones, which they then act on), unshallow a shallow one
+and no marks, file commands a file in the file list."""
 
 from __future__ import annotations
 
@@ -68,16 +69,21 @@ COMMANDS = [
 def available(app: RepoTuiApp) -> Iterator[Tuple[str, str, str]]:
     """(title, help, action) for each command that fits right now."""
     project = app._selected_project()
+    marked = app._marked_projects()
+    targets = app._targets()  # the marked projects, else the selected one
     file = app.query_one("#file-table").file_at_cursor() if project else None
     ok = {
         "": True,
-        "project": project is not None,
-        "branches": project is not None and bool(project.local_branches),
-        "shallow": project is not None and project.is_shallow,
+        "project": bool(targets),
+        "branches": any(p.local_branches for p in targets),
+        "shallow": not marked and project is not None and project.is_shallow,
         "file": file is not None,
         "staged": file is not None and file.is_staged,
     }
-    where = f" — {project.path}" if project else ""
+    if marked:
+        where = f" — {len(marked)} marked projects"
+    else:
+        where = f" — {project.path}" if project else ""
     for title, help_text, action, key, needs in COMMANDS:
         if not ok[needs]:
             continue

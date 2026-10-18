@@ -245,6 +245,8 @@ and the focus line's menu key always stay, and the full list is in `?`.
 | `R` | refresh all (re-run git status across the tree) |
 | `w` | why each project counts as changed (also: click "N changed" in the header) |
 | `u` | last sync report — which projects moved to which commit, and what came in (also: click "last sync" in the header) |
+| `m` (project list focused) | mark / unmark the selected project and move down, so `m` `m` `m` marks a run; the `Space` project actions then act on all the marked ones (see [Marking projects](#marking-several-projects-m)) |
+| `M` / `esc` (project list focused) | `M`: clear the marks if there are any, else mark every project shown; `esc`: clear them |
 | `y` (project list focused) | copy (yank) the selected project's absolute path — in the file list, the file's |
 | `o` | settings — theme, highlighted hints, sync jobs, sort, auto-refresh, … (see below) |
 | `v` | version — show the running repo-tui (version, commit) and check GitHub for a newer one right now; always says what it found |
@@ -320,6 +322,30 @@ current project, jobs running) and the output tail. Sync runs with
 [sync]
 jobs = 4
 ```
+
+## Marking several projects (`m`)
+
+In the project list, `m` marks the selected project (a `✓` in the first
+column) and moves down; `M` marks every project shown (or, with marks
+already there, clears them); `esc` clears them. The key bar says how many
+are marked, and so does the `Space` panel's title, since its project
+actions now act on all of them:
+
+- `s` sync, `d` detach: one `repo sync` for all the marked projects.
+- `b` start branch: one name, started in each.
+- `c` checkout: lists the branches the marked projects have, with how many
+  have each, and switches only those that have it.
+- `k` abandon: the same, then the usual y/N listing each project's branch.
+- `x` discard: the y/N lists each project and how many files it loses.
+- `f` forall: **Marked projects** is the first choice.
+- `r` (refresh) rescans just the marked projects.
+
+`h` unshallow stays one project at a time (it can download gigabytes).
+The right-click / `enter` menu always acts on its own row.
+
+Marks last across refreshes and filtering until an action uses them: once
+it starts, the projects it acted on are unmarked, so a later key can't act
+on a forgotten selection. Cancelling a prompt or y/N keeps them.
 
 ## Seeing what's incoming (`Space F`)
 
