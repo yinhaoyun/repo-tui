@@ -5,6 +5,8 @@ until one of those happens (no timeout)."""
 
 from __future__ import annotations
 
+from typing import Optional
+
 from textual import events
 from textual.containers import Vertical
 from textual.screen import ModalScreen
@@ -64,7 +66,7 @@ def _keys_text(with_file: bool = False) -> str:
     return "\n".join(lines)
 
 
-class ActionPanel(ModalScreen[str | None]):
+class ActionPanel(ModalScreen[Optional[str]]):
     def __init__(self, target: str | None, file_target: str | None = None) -> None:
         self._target = target
         self._file_target = file_target

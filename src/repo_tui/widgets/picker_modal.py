@@ -5,6 +5,8 @@ it via dismiss(). Matches come first, so Enter takes the best match."""
 
 from __future__ import annotations
 
+from typing import Optional
+
 from rich.markup import escape
 from textual.containers import Vertical
 from textual.screen import ModalScreen
@@ -16,7 +18,7 @@ from ..hints import key, tip
 _TYPED = "typed"
 
 
-class PickerModal(ModalScreen[str | None]):
+class PickerModal(ModalScreen[Optional[str]]):
     BINDINGS = [
         ("escape", "cancel", "Cancel"),
         ("down", "move(1)", "Down"),

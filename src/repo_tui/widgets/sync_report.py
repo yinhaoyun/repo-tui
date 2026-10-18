@@ -8,7 +8,6 @@ moved something, in place of the output screen (`o` then shows that)."""
 
 from __future__ import annotations
 
-import asyncio
 import time
 
 from rich.markup import escape
@@ -19,6 +18,7 @@ from textual.widgets import OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
 from .. import git_backend
+from ..compat import to_thread
 from ..hints import close_tip, key, tip
 from ..models import Project, SyncReport
 
@@ -97,7 +97,7 @@ class SyncReportScreen(ModalScreen[None]):
         if project is None:
             text = f"{change.path} is no longer in the project list."
         else:
-            text = await asyncio.to_thread(git_backend.describe_head_change, project, change)
+            text = await to_thread(git_backend.describe_head_change, project, change)
         log.clear()
         log.write(Text(change.path, style="b"))
         log.write(text)

@@ -4,6 +4,8 @@ detaching a branch."""
 
 from __future__ import annotations
 
+from typing import Optional
+
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import OptionList, Static
@@ -12,7 +14,7 @@ from textual.widgets.option_list import Option
 from ..hints import key, tip
 
 
-class ContextMenu(ModalScreen[str | None]):
+class ContextMenu(ModalScreen[Optional[str]]):
     """Shows `options` (id, label pairs); dismisses with the chosen id, or
     None if cancelled. Navigable by keyboard (arrows/enter) or mouse click."""
 

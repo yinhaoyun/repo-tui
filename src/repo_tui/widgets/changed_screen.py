@@ -4,6 +4,8 @@ in the main list."""
 
 from __future__ import annotations
 
+from typing import Optional
+
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import DataTable, Static
@@ -32,7 +34,7 @@ def change_reasons(project: Project) -> list[str]:
     return reasons
 
 
-class ChangedScreen(ModalScreen[str | None]):
+class ChangedScreen(ModalScreen[Optional[str]]):
     BINDINGS = [("escape", "close", "Close"), ("q", "close", "Close")]
 
     def __init__(self, projects: list[Project]) -> None:

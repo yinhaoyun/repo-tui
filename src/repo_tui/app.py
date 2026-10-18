@@ -24,6 +24,7 @@ from . import hints
 from . import repo_backend
 from . import self_update
 from . import themes
+from .compat import to_thread
 from .models import Project, SyncReport, TreeInfo
 from .widgets.action_panel import ActionPanel
 from .widgets.busy_modal import BusyModal
@@ -173,7 +174,7 @@ class RepoTuiApp(App):
 
         try:
             # collect_all updates the Project objects in place
-            await asyncio.to_thread(
+            await to_thread(
                 git_backend.collect_all,
                 self.projects if only is None else only,
                 self.config.ignore,
@@ -194,7 +195,7 @@ class RepoTuiApp(App):
         header = self.query_one("#header", HeaderBar)
         header.set_syncing(True)
         try:
-            await asyncio.to_thread(
+            await to_thread(
                 git_backend.collect_all, snapshot, self.config.ignore, self.config.max_workers
             )
         finally:
@@ -374,7 +375,7 @@ class RepoTuiApp(App):
         anyway, which would only nag). The header always shows the latest
         result; a popup only when it's news: more new commits than last
         told, or a different error."""
-        check = await asyncio.to_thread(self_update.check_for_update)
+        check = await to_thread(self_update.check_for_update)
         if check.not_a_checkout:
             return
         if check.error:
@@ -407,7 +408,7 @@ class RepoTuiApp(App):
         await self.push_screen(busy)
         busy.set_phase("Fetching…")
         try:
-            check = await asyncio.to_thread(self_update.check_for_update)
+            check = await to_thread(self_update.check_for_update)
         finally:
             await busy.dismiss()
         version = f"repo-tui {__version__}" + (
@@ -455,7 +456,7 @@ class RepoTuiApp(App):
         await self.push_screen(busy)
         busy.set_phase("Fetching from GitHub…")
         try:
-            check = await asyncio.to_thread(self_update.check_for_update)
+            check = await to_thread(self_update.check_for_update)
         finally:
             await busy.dismiss()
         header = self.query_one("#header", HeaderBar)
@@ -505,7 +506,7 @@ class RepoTuiApp(App):
                 loop.call_soon_threadsafe(busy.add_output, line)
 
         try:
-            returncode = await asyncio.to_thread(self_update.update, say, True)
+            returncode = await to_thread(self_update.update, say, True)
         except Exception as exc:  # noqa: BLE001 - shown, not raised into the UI
             say(str(exc), True)
             returncode = None
@@ -543,7 +544,7 @@ class RepoTuiApp(App):
             self.exit()
 
     async def _show_diff(self, project: Project, file) -> None:
-        text = await asyncio.to_thread(git_backend.read_file_diff, project, file)
+        text = await to_thread(git_backend.read_file_diff, project, file)
         self.push_screen(DiffScreen(f"{project.path}/{file.path}", text))
 
     # -- file actions: the file at the file list's cursor ----------------
@@ -605,7 +606,7 @@ class RepoTuiApp(App):
         project, file = selected
 
         async def show() -> None:
-            text = await asyncio.to_thread(git_backend.file_log, project, file.path)
+            text = await to_thread(git_backend.file_log, project, file.path)
             if text and project.is_shallow:
                 text += (
                     "\n(shallow clone: older history isn't here. "
@@ -631,7 +632,7 @@ class RepoTuiApp(App):
             return
 
         async def show() -> None:
-            text = await asyncio.to_thread(git_backend.file_blame, project, file.path)
+            text = await to_thread(git_backend.file_blame, project, file.path)
             self.push_screen(
                 DiffScreen(
                     f"blame: {project.path}/{file.path}",
@@ -693,7 +694,7 @@ class RepoTuiApp(App):
         """Run a quick git file operation, rescan the project, and say how
         it went: a toast on success, git's own message on failure."""
         try:
-            returncode, lines = await asyncio.to_thread(func, project, *args)
+            returncode, lines = await to_thread(func, project, *args)
         except Exception as exc:  # noqa: BLE001 - e.g. git timed out
             returncode, lines = 1, [str(exc)]
         await self._refresh(only=[project])
@@ -799,7 +800,7 @@ class RepoTuiApp(App):
         report: SyncReport | None = None
         if track_updates:
             busy.set_phase("Recording current commits…")
-            before = await asyncio.to_thread(
+            before = await to_thread(
                 git_backend.head_commits, targets, self.config.max_workers
             )
             busy.set_phase("Running…")
@@ -861,8 +862,8 @@ class RepoTuiApp(App):
     ) -> SyncReport:
         busy.set_phase("Comparing commits…")
         workers = self.config.max_workers
-        after = await asyncio.to_thread(git_backend.head_commits, targets, workers)
-        changes = await asyncio.to_thread(
+        after = await to_thread(git_backend.head_commits, targets, workers)
+        changes = await to_thread(
             git_backend.head_changes, targets, before, after, workers
         )
         report = SyncReport(title, time.time(), returncode, len(targets), changes)
@@ -1076,7 +1077,7 @@ class RepoTuiApp(App):
         )
 
         async def discard(on_output, _progress) -> int:
-            returncode, lines = await asyncio.to_thread(git_backend.discard_changes, project)
+            returncode, lines = await to_thread(git_backend.discard_changes, project)
             for line in lines:
                 await on_output(line)
             return returncode
@@ -1247,8 +1248,8 @@ class RepoTuiApp(App):
         await self.push_screen(busy)
         try:
             busy.set_phase("Fetching manifest branches…")
-            fetch_error = await asyncio.to_thread(repo_backend.fetch_manifests, self.repo_root)
-            branches = await asyncio.to_thread(repo_backend.manifest_branches, self.repo_root)
+            fetch_error = await to_thread(repo_backend.fetch_manifests, self.repo_root)
+            branches = await to_thread(repo_backend.manifest_branches, self.repo_root)
             await self._refresh(busy)
         finally:
             await busy.dismiss()
@@ -1287,7 +1288,7 @@ class RepoTuiApp(App):
         if problem:
             self.notify(problem, severity="error", timeout=8)
             return
-        files = await asyncio.to_thread(repo_backend.manifest_files, self.repo_root, branch)
+        files = await to_thread(repo_backend.manifest_files, self.repo_root, branch)
         current = self.tree_info.manifest_name
         title = (
             f"[b]Switch manifest[/] — step 2/2: manifest file on [b]{escape(branch)}[/] "

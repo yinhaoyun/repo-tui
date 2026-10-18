@@ -3,6 +3,8 @@ forall command, etc.) and returns it via dismiss()."""
 
 from __future__ import annotations
 
+from typing import Optional
+
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Static
@@ -10,7 +12,7 @@ from textual.widgets import Input, Static
 from ..hints import key, tip
 
 
-class PromptModal(ModalScreen[str | None]):
+class PromptModal(ModalScreen[Optional[str]]):
     BINDINGS = [("escape", "cancel", "Cancel")]
 
     def __init__(self, prompt: str, placeholder: str = "") -> None:

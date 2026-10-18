@@ -1,8 +1,10 @@
 import asyncio
+import inspect
 import subprocess
 import threading
 
 import pytest
+from textual.events import Click, MouseDown, MouseUp
 
 from repo_tui import git_backend, repo_backend
 from repo_tui.app import RepoTuiApp
@@ -32,6 +34,16 @@ _GIT_ENV = {
 
 def _git(cwd, *args):
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, env=_GIT_ENV)
+
+
+async def _right_click(pilot, widget, offset):
+    if "button" in inspect.signature(pilot.click).parameters:
+        return await pilot.click(widget, offset=offset, button=3)
+    # Textual < 7 (the newest on Python 3.8) has no click(button=); send the
+    # same events it would.
+    return await pilot._post_mouse_events(
+        [MouseDown, MouseUp, Click], widget=widget, offset=offset, button=3
+    )
 
 
 @pytest.fixture
@@ -200,7 +212,7 @@ def test_right_click_opens_context_menu_for_clicked_project(dirty_tree):
 
             project_list = app.query_one("#project-list", ProjectList)
             # row 1 (y offset 2, after the header) is the second row
-            await pilot.click(ProjectList, offset=(5, 2), button=3)
+            await _right_click(pilot, ProjectList, (5, 2))
             await pilot.pause()
 
             assert isinstance(app.screen_stack[-1], ContextMenu)
@@ -328,7 +340,7 @@ def test_context_menu_detach_option_calls_repo_sync_dash_d(dirty_tree, monkeypat
             _select_project(project_list, "frameworks/base")
             await pilot.pause()
 
-            await pilot.click(ProjectList, offset=(5, 1), button=3)
+            await _right_click(pilot, ProjectList, (5, 1))
             await pilot.pause()
             menu = app.screen_stack[-1]
             assert isinstance(menu, ContextMenu)
@@ -1692,7 +1704,7 @@ def test_file_menu_offers_what_fits_and_runs_it(dirty_tree, menu_key):
             file_table = await _focus_file(pilot, app, "brand_new.txt")
             row = file_table.cursor_row
             if menu_key == "right-click":
-                await pilot.click(FileTable, offset=(5, row + 1), button=3)
+                await _right_click(pilot, FileTable, (5, row + 1))
             else:
                 await pilot.press(menu_key)
             await pilot.pause()

@@ -14,11 +14,13 @@ lives behind Space, which opens the ActionPanel listing them.
 
 from __future__ import annotations
 
+from typing import List, Tuple
+
 from textual.widgets import Static
 
 from ..hints import key
 
-Group = list[tuple[list[str], str]]
+Group = List[Tuple[List[str], str]]
 
 # Keys that work wherever focus is, as groups separated by │.
 GLOBAL_GROUPS: list[Group] = [
