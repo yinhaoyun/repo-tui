@@ -288,8 +288,15 @@ The diff and blame (`b`) views are coloured in the theme's colours:
 added/removed lines and hunk headers; commit ids; and blame lines that
 aren't committed yet stand out. The title counts what's there
 (`+12 −3 · 2 hunks`, `120 lines, 4 not committed`). They open at the top; `n`/`N` jump to the next/previous hunk,
+`]`/`[` to the next/previous file (a commit's patch often has several),
 `j`/`k` scroll, `g`/`G` go to the top/bottom, `ctrl+d`/`ctrl+u` move half a
 page, and `esc`/`q` close.
+
+`/` searches: type a word (the title counts the matches as you type) and press
+`enter`; every match is highlighted and `n`/`N` now walk them, wrapping at
+the ends (the title shows `match 3/12`). Case is ignored unless the word has
+a capital letter. `esc` clears the search and `n`/`N` go back to hunks; a
+second `esc` closes.
 
 The `Space` panel only shows the "This file" column when you open it from
 the file list. After each one the project is rescanned and the cursor stays

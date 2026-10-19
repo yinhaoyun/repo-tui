@@ -11,8 +11,6 @@ on the next screen opened; the always-visible KeyBar re-renders at once."""
 
 from __future__ import annotations
 
-from rich.markup import escape
-
 _highlight = True
 
 
@@ -25,11 +23,16 @@ def highlight_enabled() -> bool:
     return _highlight
 
 
+def _keycap(name: str) -> str:
+    # rich's escape() leaves a lone "[" alone, which then breaks the markup
+    return name.replace("[", "\\[")
+
+
 def key(name: str) -> str:
     """A key or key combo, e.g. key("space") or key("esc")."""
     if _highlight:
-        return f"[b #000000 on $warning]{escape(name)}[/]"
-    return f"[b]{escape(name)}[/]"
+        return f"[b #000000 on $warning]{_keycap(name)}[/]"
+    return f"[b]{_keycap(name)}[/]"
 
 
 def tip(markup: str) -> str:

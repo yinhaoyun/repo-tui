@@ -55,10 +55,12 @@ HELP_SECTIONS = [
         ("↑ (in the list)", "a commit upstream doesn't have (not pushed / not merged)"),
     ]),
     ("Diff and blame views", [
-        ("n / N", "next / previous hunk (diff)"),
+        ("n / N", "next / previous hunk (diff); after a search, next / previous match"),
+        ("] / [", "next / previous file (a diff of several files)"),
+        ("/", "search (smart case), enter: find; esc clears the search"),
         ("j/k, g/G", "scroll a line, jump to the top / bottom"),
         ("ctrl+d / ctrl+u", "half a page down / up"),
-        ("esc, q", "close"),
+        ("esc, q", "close (esc first clears a search)"),
     ]),
     ("Change — press space, then a key (stays open until you choose)", [
         ("space s", "repo sync — selected project only"),
