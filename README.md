@@ -240,6 +240,7 @@ and the focus line's menu key always stay, and the full list is in `?`.
 | `ctrl+p` | command palette — type part of a name ("abandon", "unshallow", "manifest", "blame", …) to find any action and run it; each shows its key. Offers only what fits: project actions need a selected project, file actions a file in the file list. Only opens on the main screen, never over a dialog or a running command |
 | `/` | filter projects by path/name |
 | `a` | toggle show-all vs. hide-unchanged |
+| `f` | show only the projects in one state — uncommitted changes, unpushed commits (ahead), behind upstream, on a local branch, detached HEAD with uncommitted changes, or errors. Each choice shows how many projects it has (empty ones aren't offered); "Everything" goes back. While one is on, the header says `showing: unpushed (2)` — click it to change. It adds to `/` and `a` rather than replacing them |
 | `i` | toggle showing ignored files in the file list |
 | `r` | refresh only the selected project — quick, for when you know just that one changed (also the right-click menu) |
 | `R` | refresh all (re-run git status across the tree) |

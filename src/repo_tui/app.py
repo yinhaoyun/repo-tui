@@ -41,6 +41,7 @@ from .widgets.keybar import KeyBar
 from .widgets.log_screen import LogScreen
 from .widgets.picker_modal import PickerModal
 from .widgets.project_list import (
+    STATUS_FILTERS,
     MarksChanged,
     ProjectContextMenuRequested,
     ProjectHighlighted,
@@ -73,6 +74,7 @@ class RepoTuiApp(App):
         Binding("slash", "toggle_filter", "Filter", key_display="/"),
         Binding("/", "toggle_filter", "Filter", show=False),
         Binding("a", "toggle_show_all", "Show all"),
+        Binding("f", "pick_status_filter", "Show only…"),
         Binding("i", "toggle_show_ignored", "Show ignored"),
         # Lowercase acts on the selected project, Shift on the whole tree --
         # the same rule as s/S in the Space action panel.
@@ -100,6 +102,7 @@ class RepoTuiApp(App):
         self.show_all = self.config.show_all_default
         self.show_ignored = False
         self.search = ""
+        self.status_filter = ""  # a project_list.STATUS_FILTERS id
         self._auto_timer = None
         self._update_timer = None
         # What the update checks last told the user, so a periodic check
@@ -146,11 +149,14 @@ class RepoTuiApp(App):
     # -- data plumbing ----------------------------------------------------
 
     def _apply_filters(self) -> None:
-        self.query_one("#project-list", ProjectList).set_projects(
-            self.projects, self.show_all, self.search, self.config.sort
+        project_list = self.query_one("#project-list", ProjectList)
+        project_list.set_projects(
+            self.projects, self.show_all, self.search, self.config.sort, self.status_filter
         )
         self._sync_detail_pane()
-        self.query_one("#header", HeaderBar).set_counts(self.projects)
+        header = self.query_one("#header", HeaderBar)
+        header.set_counts(self.projects)
+        header.set_status_filter(self.status_filter, len(project_list._row_paths))
 
     def _sync_detail_pane(self) -> None:
         project = self.query_one("#project-list", ProjectList).project_at_cursor()
@@ -310,6 +316,28 @@ class RepoTuiApp(App):
     def action_toggle_show_all(self) -> None:
         self.show_all = not self.show_all
         self._apply_filters()
+
+    def action_pick_status_filter(self) -> None:
+        """f: show only the projects in one state (uncommitted changes,
+        unpushed commits, …), each offered with how many are in it."""
+        if len(self.screen_stack) > 1:
+            return
+        options = []
+        for filter_id, (label, wanted) in STATUS_FILTERS.items():
+            count = sum(1 for p in self.projects if wanted(p) and (filter_id or p.is_changed))
+            if filter_id and not count and filter_id != self.status_filter:
+                continue  # nothing to show
+            current = "[b $accent]●[/] " if filter_id == self.status_filter else "  "
+            count_text = f"{count} changed" if not filter_id else str(count)
+            options.append((filter_id or "all", f"{current}{label}  [dim]({count_text})[/]"))
+
+        def chosen(filter_id: str | None) -> None:
+            if filter_id is None:
+                return
+            self.status_filter = "" if filter_id == "all" else filter_id
+            self._apply_filters()
+
+        self.push_screen(ContextMenu("Show only", options), chosen)
 
     def action_toggle_show_ignored(self) -> None:
         self.show_ignored = not self.show_ignored

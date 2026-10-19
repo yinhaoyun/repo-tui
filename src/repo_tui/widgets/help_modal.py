@@ -31,6 +31,7 @@ HELP_SECTIONS = [
         ("w", "why each project counts as changed"),
         ("u", "last sync report: which projects got which commits"),
         ("/", "filter the project list by path/name"),
+        ("f", "show only: uncommitted, unpushed, behind, on a branch, detached + changes, errors"),
         ("a", 'toggle "show all" vs "hide unchanged" (default: hidden)'),
         ("i", "toggle showing ignored files in the file list"),
         ("o", "settings: theme, sync jobs, sort, auto-refresh, …"),

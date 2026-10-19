@@ -568,9 +568,15 @@ def test_immediate_actions_need_action_panel(dirty_tree, monkeypatch):
             await pilot.pause()
             await app.workers.wait_for_complete()
             # no key that changes a checkout is bound on the top layer
-            await pilot.press("s", "S", "d", "b", "c", "x", "f")
+            await pilot.press("s", "S", "d", "b", "c", "x")
             await pilot.pause()
             assert len(app.screen_stack) == 1
+            await pilot.press("f")  # only "show only…", a look-only filter menu
+            await pilot.pause()
+            assert isinstance(app.screen_stack[-1], ContextMenu)
+            assert str(app.screen_stack[-1].query_one("#menu-title").render()) == "Show only"
+            await pilot.press("escape")
+            await pilot.pause()
             await app.workers.wait_for_complete()
             assert calls == []
 

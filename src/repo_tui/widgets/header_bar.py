@@ -1,9 +1,10 @@
 """Top status bar: manifest/branch info, aggregate change counts, what the
 last sync changed, last refresh time, and whether a newer repo-tui is out.
 
-"N changed", "last sync: N updated" and "⬆ repo-tui update" are clickable:
-they open the changed projects summary, the last sync's report (also `w` /
-`u`) and the repo-tui update (also `U`)."""
+"N changed", "showing: …", "last sync: N updated" and "⬆ repo-tui update"
+are clickable: they open the changed projects summary, the status filter
+picker, the last sync's report (also `w` / `f` / `u`) and the repo-tui
+update (also `U`)."""
 
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ from textual.containers import Horizontal
 from textual.widgets import Static
 
 from ..models import Project, SyncReport, TreeInfo
+from .project_list import STATUS_SHORT
 
 
 class HeaderItem(Static):
@@ -41,10 +43,14 @@ class HeaderBar(Horizontal):
         self.last_refresh = 0.0
         self.report: SyncReport | None = None
         self.update_behind = 0  # new repo-tui commits on GitHub
+        self.status_filter = ""  # a project_list.STATUS_FILTERS id
+        self.shown = 0  # rows the status filter leaves
 
     def compose(self):
         yield Static(id="hdr-info")
         yield HeaderItem("show_changed", id="hdr-changed", classes="hdr-link")
+        yield Static("  │  ", id="hdr-filter-sep")
+        yield HeaderItem("pick_status_filter", id="hdr-filter", classes="hdr-link")
         yield Static("  │  ", id="hdr-sync-sep")
         yield HeaderItem("show_sync_report", id="hdr-sync", classes="hdr-link")
         yield Static(id="hdr-status")
@@ -61,6 +67,11 @@ class HeaderBar(Horizontal):
         self.total = len(projects)
         self.changed = sum(1 for p in projects if p.is_changed)
         self.last_refresh = time.time()
+        self._refresh_display()
+
+    def set_status_filter(self, status: str, shown: int) -> None:
+        self.status_filter = status
+        self.shown = shown
         self._refresh_display()
 
     def set_syncing(self, value: bool) -> None:
@@ -88,6 +99,13 @@ class HeaderBar(Horizontal):
         )
         self.query_one("#hdr-changed", Static).update(
             f"[b red]{self.changed} changed[/]" if self.changed else "[b green]clean[/]"
+        )
+        status = self.query_one("#hdr-filter", Static)
+        status.display = bool(self.status_filter)
+        self.query_one("#hdr-filter-sep").display = bool(self.status_filter)
+        status.update(
+            f"[b $text-warning]showing: {STATUS_SHORT.get(self.status_filter, '')}"
+            f" ({self.shown})[/] [dim](f)[/]"
         )
 
         report = self.report

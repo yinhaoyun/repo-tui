@@ -35,7 +35,7 @@ Group = List[Item]
 GLOBAL_GROUPS: list[Group] = [
     [(["space"], "actions", 1), (["ctrl+p"], "commands", 1), (["?"], "help", 1)],
     [(["r", "R"], "refresh", 2), (["w"], "why", 3), (["u"], "last sync", 3)],
-    [(["/"], "filter", 2), (["a"], "all", 2), (["i"], "ignored", 3)],
+    [(["/"], "filter", 2), (["f"], "show only", 2), (["a"], "all", 2), (["i"], "ignored", 3)],
     [(["o"], "settings", 3), (["v", "U"], "check/update", 3), (["q"], "quit", 1)],
 ]
 

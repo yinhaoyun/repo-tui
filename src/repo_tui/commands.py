@@ -49,6 +49,8 @@ COMMANDS = [
     ("Last sync report", "which projects the last sync moved, and what came in",
      "show_sync_report", "u", ""),
     ("Filter projects", "filter the project list by path/name", "toggle_filter", "/", ""),
+    ("Show only projects in a state", "uncommitted changes, unpushed commits, behind, on a "
+     "branch, detached with changes, errors", "pick_status_filter", "f", ""),
     ("Copy project path", "copy the selected project's absolute path", "copy_path", "y",
      "project"),
     ("File: diff", "the file's changes since HEAD", "file_diff", "enter → Diff", "file"),

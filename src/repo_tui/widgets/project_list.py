@@ -23,6 +23,28 @@ _SORT_KEYS = {
 }
 
 
+# Status filter id -> (menu label, test). On top of "show all" and the name
+# filter; every one of these projects counts as changed anyway.
+STATUS_FILTERS = {
+    "": ("Everything", lambda p: True),
+    "modified": ("Uncommitted changes", lambda p: p.has_visible_changes),
+    "ahead": ("Unpushed commits (ahead)", lambda p: p.ahead > 0),
+    "behind": ("Behind upstream", lambda p: p.behind > 0),
+    "branch": ("On a local branch", lambda p: bool(p.current_branch) and not p.is_detached),
+    "detached": (
+        "Detached, with uncommitted changes",
+        lambda p: p.is_detached and p.has_visible_changes,
+    ),
+    "error": ("Errors", lambda p: bool(p.error)),
+}
+
+# Short names for the header: "showing: unpushed".
+STATUS_SHORT = {
+    "modified": "uncommitted", "ahead": "unpushed", "behind": "behind",
+    "branch": "on a branch", "detached": "detached + changes", "error": "errors",
+}
+
+
 class ProjectHighlighted(Message):
     """Sent whenever the highlighted row changes (keyboard or mouse)."""
 
@@ -88,7 +110,12 @@ class ProjectList(DataTable):
         self.add_column("Path")
 
     def set_projects(
-        self, projects: list[Project], show_all: bool, search: str = "", sort: str = "changed"
+        self,
+        projects: list[Project],
+        show_all: bool,
+        search: str = "",
+        sort: str = "changed",
+        status: str = "",
     ) -> None:
         self._all_projects = projects
         known = {p.path for p in projects}
@@ -101,10 +128,12 @@ class ProjectList(DataTable):
         self._row_paths = []
 
         needle = search.strip().lower()
+        wanted = STATUS_FILTERS.get(status, STATUS_FILTERS[""])[1]
         visible = [
             p
             for p in projects
             if (show_all or p.is_changed)
+            and wanted(p)
             and (not needle or needle in p.path.lower() or needle in p.name.lower())
         ]
         visible.sort(key=_SORT_KEYS.get(sort, _SORT_KEYS["changed"]))
