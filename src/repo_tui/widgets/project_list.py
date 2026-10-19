@@ -62,6 +62,8 @@ class ProjectList(DataTable):
         Binding("escape", "clear_marks", "Clear marks", show=False),
         # Focus keys: in the file list, y copies the file's path instead.
         Binding("y", "app.copy_path", "Copy project path", show=False),
+        # In the file list, l is that file's history instead.
+        Binding("l", "app.project_log", "History", show=False),
         # The right-click menu from the keyboard (shift+F10 is the usual
         # "context menu" key in desktop apps).
         Binding("enter,shift+f10", "app.project_menu", "Menu", show=False),

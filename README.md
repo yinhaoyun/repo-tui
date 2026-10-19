@@ -245,6 +245,7 @@ and the focus line's menu key always stay, and the full list is in `?`.
 | `R` | refresh all (re-run git status across the tree) |
 | `w` | why each project counts as changed (also: click "N changed" in the header) |
 | `u` | last sync report — which projects moved to which commit, and what came in (also: click "last sync" in the header) |
+| `l` (project list focused) | the project's history — every commit with its message, files and diff (see [History](#history-l)); in the file list, the file's |
 | `m` (project list focused) | mark / unmark the selected project and move down, so `m` `m` `m` marks a run; the `Space` project actions then act on all the marked ones (see [Marking projects](#marking-several-projects-m)) |
 | `M` / `esc` (project list focused) | `M`: clear the marks if there are any, else mark every project shown; `esc`: clear them |
 | `y` (project list focused) | copy (yank) the selected project's absolute path — in the file list, the file's |
@@ -275,7 +276,7 @@ file at the cursor, and the bottom bar shows them first:
 |---|---|
 | `enter` / `shift+F10` / right-click | the file's menu: diff, history, blame, edit, copy path, stage, unstage, revert — only the ones that fit the file (no blame for an untracked file, no unstage when nothing is staged) |
 | click | diff since HEAD: staged and unstaged changes together; an untracked file shows its whole content |
-| `l` | history — the commits that touched the file (`git log --follow`) |
+| `l` | history — the commits that touched the file (`git log --follow`), in the history view below |
 | `b` | blame |
 | `e` | open it in `$VISUAL` / `$EDITOR` (`vi` if neither is set); repo-tui steps aside while the editor runs and rescans the project after |
 | `y` | copy the file's absolute path (instead of the project's) |
@@ -283,11 +284,10 @@ file at the cursor, and the bottom bar shows them first:
 | `Space` then `u` | unstage it (`git restore --staged`), keeping your edits |
 | `Space` then `r` | revert it: tracked changes back to HEAD (both staged and unstaged), an untracked file deleted — asks y/N first |
 
-The diff, history (`l`) and blame (`b`) views are coloured in the theme's
-colours: added/removed lines and hunk headers; commit ids, dates and
-authors; and blame lines that aren't committed yet stand out. The title
-counts what's there (`+12 −3 · 2 hunks`, `8 commits`, `120 lines, 4 not
-committed`). They open at the top; `n`/`N` jump to the next/previous hunk,
+The diff and blame (`b`) views are coloured in the theme's colours:
+added/removed lines and hunk headers; commit ids; and blame lines that
+aren't committed yet stand out. The title counts what's there
+(`+12 −3 · 2 hunks`, `120 lines, 4 not committed`). They open at the top; `n`/`N` jump to the next/previous hunk,
 `j`/`k` scroll, `g`/`G` go to the top/bottom, `ctrl+d`/`ctrl+u` move half a
 page, and `esc`/`q` close.
 
@@ -322,6 +322,28 @@ current project, jobs running) and the output tail. Sync runs with
 [sync]
 jobs = 4
 ```
+
+## History (`l`)
+
+`l` on the project list opens the project's history; on the file list, the
+file's (following renames). On the left are the commits on HEAD, newest
+first (the newest 300), each with its short sha, date, subject and refs
+(`HEAD -> topic`, `aosp/main`, tags). A **↑** marks a commit the upstream
+doesn't have — the manifest revision's remote branch — i.e. one that isn't
+pushed or merged yet. On the right is the highlighted commit's full
+message, author, dates and the files it changed (`--stat`).
+
+- `↑`/`↓` pick a commit; `enter` (or a click) opens its full diff in the
+  diff view (`n`/`N` hunks). In a file's history, just that file's part,
+  under its name in that commit.
+- `/` filters by sha, subject, author, ref or date; `esc` clears it.
+- `y` copies the commit's full sha.
+- The line at the top counts the commits, how many aren't upstream, how
+  many newer ones upstream has (fetch them with `Space F`, sync with
+  `Space S`), and says when a shallow clone's older history is missing.
+
+Also in the project's right-click / `enter` menu, the file's menu, and
+`ctrl+p` ("History").
 
 ## Marking several projects (`m`)
 

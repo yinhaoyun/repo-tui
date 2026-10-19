@@ -1,7 +1,7 @@
 """A modal screen showing the full `git diff` output for one file (also used
-for a file's history and blame), coloured in the theme's colours: added and
-removed lines, hunk headers, commit ids, dates and authors, and blame lines
-that aren't committed yet. n/N jump between a diff's hunks."""
+for a commit's patch and a file's blame), coloured in the theme's colours:
+added and removed lines, hunk headers, commit ids, and blame lines that
+aren't committed yet. n/N jump between a diff's hunks."""
 
 from __future__ import annotations
 
@@ -28,10 +28,6 @@ DEFAULT_PALETTE: Palette = {
     "pending": "bold yellow",
 }
 
-# file_log's format: "%h  %ad  %<(16,trunc)%an  %s". The author is padded
-# to 16 columns, not characters (a CJK name is narrower in characters), so
-# it ends at the run of 2+ spaces instead.
-_LOG_RE = re.compile(r"^(\S+)  (\d{4}-\d\d-\d\d)  (.*?)( {2,})(.*)$")
 # git blame --date=short: "<sha> [<orig path>] (<author> <date> <line>) <code>"
 _BLAME_RE = re.compile(r"^(\^?[0-9a-f]+)( [^(]*?)? ?(\(.*?\d{4}-\d\d-\d\d +\d+\))(.*)$")
 _DIFF_HEADERS = ("diff --git ", "index ", "--- ", "+++ ", "new file mode", "deleted file mode",
@@ -62,17 +58,6 @@ def diff_roles(lines: List[str]) -> List[str]:
     return roles
 
 
-def _log_line(line: str, palette: Palette) -> Text:
-    m = _LOG_RE.match(line)
-    if not m:
-        return Text(line, style=palette["muted"])  # e.g. the shallow-clone note
-    sha, date, author, gap, subject = m.groups()
-    return Text.assemble(
-        (sha, palette["id"]), "  ", (date, palette["muted"]), "  ",
-        (author, palette["hunk"]), gap, subject,
-    )
-
-
 def _blame_line(line: str, palette: Palette) -> Text:
     m = _BLAME_RE.match(line)
     if not m:
@@ -85,8 +70,27 @@ def _blame_line(line: str, palette: Palette) -> Text:
     )
 
 
+def theme_palette(app) -> Palette:  # noqa: ANN001 - a Textual App
+    """DEFAULT_PALETTE's roles in the current theme's text colours, so a
+    light theme gets colours readable on a light background."""
+    variables = app.get_css_variables()
+    palette = dict(DEFAULT_PALETTE)
+    for role, variable in (
+        ("added", "text-success"),
+        ("removed", "text-error"),
+        ("hunk", "text-primary"),
+        ("id", "text-warning"),
+    ):
+        colour = variables.get(variable, "")
+        if colour.startswith("#"):
+            palette[role] = colour
+    if palette["id"].startswith("#"):
+        palette["pending"] = f"bold {palette['id']}"
+    return palette
+
+
 def colorize(kind: str, text: str, palette: Palette = DEFAULT_PALETTE) -> Tuple[Text, List[int]]:
-    """`text` as one Rich Text styled for `kind` ("diff", "log", "blame";
+    """`text` as one Rich Text styled for `kind` ("diff", "blame";
     anything else is left plain), and the line numbers of a diff's hunks."""
     lines = text.splitlines()
     if kind == "diff":
@@ -96,22 +100,18 @@ def colorize(kind: str, text: str, palette: Palette = DEFAULT_PALETTE) -> Tuple[
             for line, role in zip(lines, roles)
         ]
         return Text("\n").join(styled), [i for i, r in enumerate(roles) if r == "hunk"]
-    styler = {"log": _log_line, "blame": _blame_line}.get(kind)
-    if styler is None:
+    if kind != "blame":
         return Text(text), []
-    return Text("\n").join(styler(line, palette) for line in lines), []
+    return Text("\n").join(_blame_line(line, palette) for line in lines), []
 
 
 def summary(kind: str, text: str) -> str:
-    """A short count for the title: "+12 −3 · 2 hunks", "8 commits", …"""
+    """A short count for the title: "+12 −3 · 2 hunks", "120 lines", …"""
     lines = text.splitlines()
     if kind == "diff":
         roles = diff_roles(lines)
         added, removed, hunks = (roles.count(r) for r in ("added", "removed", "hunk"))
         return f"+{added} −{removed} · {hunks} hunk{'s' if hunks != 1 else ''}"
-    if kind == "log":
-        commits = sum(1 for line in lines if _LOG_RE.match(line))
-        return f"{commits} commit{'s' if commits != 1 else ''}"
     if kind == "blame":
         pending = sum(
             1 for line in lines
@@ -166,26 +166,8 @@ class DiffScreen(ModalScreen[None]):
         if not self._diff_text:
             log.write(self._empty)
             return
-        text, self._hunks = colorize(self._kind, self._diff_text, self._palette())
+        text, self._hunks = colorize(self._kind, self._diff_text, theme_palette(self.app))
         log.write(text)
-
-    def _palette(self) -> Palette:
-        """DEFAULT_PALETTE's roles in the current theme's text colours, so a
-        light theme gets colours readable on a light background."""
-        variables = self.app.get_css_variables()
-        palette = dict(DEFAULT_PALETTE)
-        for role, variable in (
-            ("added", "text-success"),
-            ("removed", "text-error"),
-            ("hunk", "text-primary"),
-            ("id", "text-warning"),
-        ):
-            colour = variables.get(variable, "")
-            if colour.startswith("#"):
-                palette[role] = colour
-        if palette["id"].startswith("#"):
-            palette["pending"] = f"bold {palette['id']}"
-        return palette
 
     def _jump(self, forward: bool) -> None:
         log = self.query_one("#diff-log", RichLog)

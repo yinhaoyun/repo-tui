@@ -111,6 +111,19 @@ class Project:
 
 
 @dataclass
+class Commit:
+    """One commit in a project's (or a file's) history."""
+
+    sha: str
+    short: str
+    date: str  # YYYY-MM-DD
+    author: str
+    refs: str  # git's decorations: "HEAD -> topic, aosp/main, tag: v1"
+    subject: str
+    path: str = ""  # a file's history: its name in this commit (renames)
+
+
+@dataclass
 class HeadChange:
     """A project whose checked-out commit moved during a sync."""
 

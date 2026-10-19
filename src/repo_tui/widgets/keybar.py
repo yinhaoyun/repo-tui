@@ -42,7 +42,8 @@ GLOBAL_GROUPS: list[Group] = [
 # Focus contexts: (label, keys) for whatever has focus.
 FOCUS_CONTEXTS: dict[str, tuple[str, Group]] = {
     "projects": ("PROJECT LIST", [
-        (["↑↓"], "select", 3), (["enter", "shift+f10"], "menu", 1), (["m"], "mark", 2),
+        (["↑↓"], "select", 3), (["enter", "shift+f10"], "menu", 1), (["l"], "log", 2),
+        (["m"], "mark", 2),
         (["M"], "all/none", 3), (["tab"], "to files", 2), (["y"], "copy project path", 3),
     ]),
     "files": ("FILE LIST", [

@@ -16,6 +16,7 @@ from repo_tui.widgets.confirm_modal import ConfirmModal
 from repo_tui.widgets.context_menu import ContextMenu
 from repo_tui.widgets.detail_pane import FileTable
 from repo_tui.widgets.diff_screen import DiffScreen
+from repo_tui.widgets.log_screen import LogScreen
 from repo_tui.widgets.result_screen import ResultScreen
 from repo_tui.widgets.settings_screen import SettingsScreen
 from repo_tui.widgets.help_modal import HelpModal
@@ -1637,7 +1638,7 @@ def test_file_list_keys_stage_unstage_revert_history(dirty_tree, monkeypatch):
             await pilot.pause()
             await app.workers.wait_for_complete()
             await pilot.pause()
-            assert isinstance(app.screen_stack[-1], DiffScreen)
+            assert isinstance(app.screen_stack[-1], LogScreen)
             await pilot.press("escape")
             await pilot.pause()
 

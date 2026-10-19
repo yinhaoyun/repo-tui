@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Iterable, Optional
 
 from .ignore import IgnoreRules
-from .models import FileStatus, HeadChange, Project
+from .models import Commit, FileStatus, HeadChange, Project
 
 _GIT_TIMEOUT = 15
 
@@ -293,15 +293,57 @@ def read_file_diff(project: Project, file: FileStatus) -> str:
     return text
 
 
-def file_log(project: Project, rel_path: str, limit: int = 200) -> str:
-    """The commits that touched one file (following renames), newest first."""
-    return _run_git(
-        project.abs_path,
-        [
-            "log", "--follow", f"-n{limit}", "--date=short",
-            "--format=%h  %ad  %<(16,trunc)%an  %s", "--", rel_path,
-        ],
-    )
+HISTORY_LIMIT = 300
+_FIELDS = "%H%x1f%h%x1f%ad%x1f%an%x1f%D%x1f%s"
+
+
+def history(project: Project, path: str = "", limit: int = HISTORY_LIMIT) -> list[Commit]:
+    """The newest `limit` commits on HEAD, or, with `path`, the ones that
+    touched that file (following renames, each with the file's name in that
+    commit)."""
+    args = ["log", f"-n{limit}", "--date=short", f"--format=%x1e{_FIELDS}"]
+    if path:
+        args += ["--follow", "--name-only", "--", path]
+    commits = []
+    for record in _run_git(project.abs_path, args).split("\x1e")[1:]:
+        first, _, rest = record.partition("\n")
+        fields = first.split("\x1f")
+        if len(fields) != 6:
+            continue
+        names = [line for line in rest.splitlines() if line.strip()]
+        commits.append(Commit(*fields, path=names[0] if names else path))
+    return commits
+
+
+def history_context(project: Project) -> tuple[Optional[set[str]], Optional[int]]:
+    """(shas on HEAD that the upstream commit doesn't have, how many commits
+    upstream has that HEAD doesn't) -- (None, None) with no known upstream."""
+    upstream = upstream_commit(project)
+    if not upstream:
+        return None, None
+    local = _run_git(project.abs_path, ["rev-list", f"{upstream}..HEAD"]).split()
+    behind = _run_git(project.abs_path, ["rev-list", "--count", f"HEAD..{upstream}"]).strip()
+    return set(local), int(behind) if behind.isdigit() else None
+
+
+_SHOW_FORMAT = (
+    "--format=commit %H%nAuthor: %an <%ae>%nDate:   %ad%n"
+    "Commit: %cn <%ce>%nRefs:   %D%n%n%B"
+)
+
+
+def commit_details(project: Project, commit: Commit) -> str:
+    """The commit's full message and which files it changed (--stat),
+    limited to the file for a file's history."""
+    args = ["show", "--no-color", "--stat", "--date=iso", _SHOW_FORMAT, commit.sha]
+    return _run_git(project.abs_path, args + (["--", commit.path] if commit.path else []))
+
+
+def commit_patch(project: Project, commit: Commit) -> str:
+    """The commit's message and full diff (just the file's part, under its
+    name in that commit, for a file's history)."""
+    args = ["show", "--no-color", "-M", "--date=iso", _SHOW_FORMAT, "--patch", commit.sha]
+    return _run_git(project.abs_path, args + (["--", commit.path] if commit.path else []))
 
 
 def file_blame(project: Project, rel_path: str) -> str:

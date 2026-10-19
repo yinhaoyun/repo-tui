@@ -13,8 +13,9 @@ from typing import TYPE_CHECKING, Iterator, Tuple
 if TYPE_CHECKING:
     from .app import RepoTuiApp
 
-# (title, help, app action, key, what it needs: "" | "project" | "branches"
-#  | "shallow" | "file" | "staged")
+# (title, help, app action, key, what it needs: "" | "project" (marked or
+#  selected) | "cursor" (the selected one) | "branches" | "shallow" | "file"
+#  | "staged")
 COMMANDS = [
     ("Sync project", "repo sync the selected project", "sync_selected", "space s", "project"),
     ("Sync all projects", "repo sync the whole tree", "sync_all", "space S", ""),
@@ -38,6 +39,8 @@ COMMANDS = [
      "space f", ""),
     ("Switch manifest branch / file", "repo init -b -m, then sync the whole tree",
      "switch_manifest", "space M", ""),
+    ("History (git log)", "the project's commits, their messages and diffs",
+     "project_log", "l", "cursor"),
     ("Refresh project", "rescan the selected project's status", "refresh_project", "r",
      "project"),
     ("Refresh all", "rescan every project's status", "refresh_status", "R", ""),
@@ -75,6 +78,7 @@ def available(app: RepoTuiApp) -> Iterator[Tuple[str, str, str]]:
     ok = {
         "": True,
         "project": bool(targets),
+        "cursor": project is not None,
         "branches": any(p.local_branches for p in targets),
         "shallow": not marked and project is not None and project.is_shallow,
         "file": file is not None,
@@ -89,6 +93,8 @@ def available(app: RepoTuiApp) -> Iterator[Tuple[str, str, str]]:
             continue
         if needs in ("project", "branches", "shallow"):
             help_text += where
+        elif needs == "cursor":
+            help_text += f" — {project.path}"
         elif needs in ("file", "staged"):
             help_text += f" — {file.path}"
         yield title, f"{help_text}  ·  {key}", action

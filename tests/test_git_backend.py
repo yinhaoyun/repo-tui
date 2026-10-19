@@ -194,8 +194,8 @@ def test_file_diff_log_stage_unstage(tmp_path):
     untracked = FileStatus("new.txt", "?", "?")
     assert "+hello" in git_backend.read_file_diff(project, untracked)
 
-    log = git_backend.file_log(project, "a.txt")
-    assert "first" in log and len(log.splitlines()) == 1
+    [commit] = git_backend.history(project, "a.txt")
+    assert commit.subject == "first" and commit.path == "a.txt"
     assert "one" in git_backend.file_blame(project, "a.txt")
 
     rc, _ = git_backend.discard_files(project, [tracked, untracked])
@@ -240,7 +240,7 @@ def test_shallow_clone_is_detected_and_unshallowed(tmp_path):
     assert rc == 0
     git_backend.collect_project_status(project, IgnoreRules())
     assert not project.is_shallow
-    assert len(git_backend.file_log(project, "f.txt").splitlines()) == 3
+    assert len(git_backend.history(project, "f.txt")) == 3
 
 
 def test_fetch_remote_explains_when_there_is_none(tmp_path):

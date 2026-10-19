@@ -38,6 +38,7 @@ from .widgets.diff_screen import DiffScreen
 from .widgets.header_bar import HeaderBar
 from .widgets.help_modal import HelpModal
 from .widgets.keybar import KeyBar
+from .widgets.log_screen import LogScreen
 from .widgets.picker_modal import PickerModal
 from .widgets.project_list import (
     MarksChanged,
@@ -676,28 +677,17 @@ class RepoTuiApp(App):
             self._open_context_menu(project)
 
     def action_file_log(self) -> None:
+        """l in the file list: the file's history, following renames."""
         selected = self._selected_file()
-        if selected is None:
-            return
-        project, file = selected
+        if selected is not None:
+            project, file = selected
+            self.push_screen(LogScreen(project, file.path))
 
-        async def show() -> None:
-            text = await to_thread(git_backend.file_log, project, file.path)
-            if text and project.is_shallow:
-                text += (
-                    "\n(shallow clone: older history isn't here. "
-                    "Space h in the project list fetches it.)"
-                )
-            self.push_screen(
-                DiffScreen(
-                    f"history: {project.path}/{file.path}",
-                    text,
-                    empty="(no commits touch this file yet)",
-                    kind="log",
-                )
-            )
-
-        self.run_worker(show(), exclusive=True, group="diff")
+    def action_project_log(self) -> None:
+        """l in the project list: the project's history."""
+        project = self._selected_project()
+        if project is not None:
+            self.push_screen(LogScreen(project))
 
     def action_file_blame(self) -> None:
         selected = self._selected_file()
@@ -1469,6 +1459,7 @@ class RepoTuiApp(App):
     def _open_context_menu(self, project: Project) -> None:
         options = [
             ("refresh", "Refresh status"),
+            ("log", "History (git log)"),
             ("sync", "Sync (repo sync)"),
             ("detach", "Detach to manifest revision (repo sync -d)"),
             ("switch", "Checkout branch…"),
@@ -1485,6 +1476,8 @@ class RepoTuiApp(App):
         def handle(choice: str | None) -> None:
             if choice == "refresh":
                 self._refresh_project(project)
+            elif choice == "log":
+                self.push_screen(LogScreen(project))
             elif choice == "sync":
                 self._sync_projects([project])
             elif choice == "detach":

@@ -18,6 +18,7 @@ HELP_SECTIONS = [
         ("drag │", "drag the divider between the panes to resize them"),
     ]),
     ("Project list — while it has focus", [
+        ("l", "history: the project's commits — messages, files, enter for the diff"),
         ("y", "copy (yank) the selected project's absolute path"),
         ("m", "mark / unmark the project (and move down); space actions then act on the marks"),
         ("M, esc", "M: mark every shown project, or clear the marks; esc: clear them"),
@@ -41,13 +42,19 @@ HELP_SECTIONS = [
     ("File list — while it has focus (tab to it), on the file at the cursor", [
         ("enter, shift+F10", "the file's actions as a menu (also right-click)"),
         ("click", "diff since HEAD (staged + unstaged; untracked: whole file)"),
-        ("l", "history: commits that touched the file (follows renames)"),
+        ("l", "history: commits that touched the file (follows renames), enter: diff"),
         ("b", "blame"),
         ("e", "open in $VISUAL / $EDITOR (vi if unset), then rescan"),
         ("y", "copy the file's absolute path"),
         ("space a/u/r", "stage / unstage / revert the file (revert asks y/N)"),
     ]),
-    ("Diff, history and blame views", [
+    ("History view (l)", [
+        ("↑↓, enter", "pick a commit (its message and files show on the right); its diff"),
+        ("/", "filter by sha, subject, author, ref or date (esc clears)"),
+        ("y", "copy the commit's sha"),
+        ("↑ (in the list)", "a commit upstream doesn't have (not pushed / not merged)"),
+    ]),
+    ("Diff and blame views", [
         ("n / N", "next / previous hunk (diff)"),
         ("j/k, g/G", "scroll a line, jump to the top / bottom"),
         ("ctrl+d / ctrl+u", "half a page down / up"),

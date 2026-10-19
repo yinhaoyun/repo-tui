@@ -40,19 +40,6 @@ def test_colorize_diff_styles_lines_and_finds_hunks():
     assert styles["@@ -1,3 +1,3 @@"] == DEFAULT_PALETTE["hunk"]
 
 
-def test_colorize_log_keeps_the_columns_of_a_wide_author_name():
-    log = (
-        "d9bb678  2026-10-18  尹浩云            中文 commit\n"
-        "878f3b9  2026-10-18  A Very Long Au..  rename\n"
-    )
-    text, _ = colorize("log", log)
-    assert str(text) == log.rstrip("\n")
-    styles = _styles(text)
-    assert styles["尹浩云"] == DEFAULT_PALETTE["hunk"]
-    assert styles["878f3b9"] == DEFAULT_PALETTE["id"]
-    assert summary("log", log) == "2 commits"
-
-
 def test_colorize_blame_marks_lines_not_committed_yet():
     blame = (
         "^a39739a old.txt (Someone 2026-10-18 1) one\n"
