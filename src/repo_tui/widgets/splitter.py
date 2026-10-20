@@ -11,6 +11,9 @@ MIN_PANE_WIDTH = 20  # neither pane can be dragged narrower than this
 
 
 class Splitter(Widget):
+    # a drag here resizes the panes; it must not start a text selection
+    ALLOW_SELECT = False
+
     def __init__(self, target_id: str, **kwargs) -> None:
         """`target_id`: id of the sibling widget whose width the drag sets."""
         super().__init__(**kwargs)

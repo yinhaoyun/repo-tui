@@ -743,6 +743,9 @@ def test_dragging_splitter_resizes_project_list(dirty_tree):
             await pilot.pause()
             assert project_list.size.width == 120 - 3 - 20
 
+            # a drag resizes; it never leaves a text selection behind
+            assert not app.screen.selections
+
     asyncio.run(scenario())
 
 
