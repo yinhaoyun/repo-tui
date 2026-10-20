@@ -38,7 +38,7 @@ ProjectList {
 }
 
 Splitter {
-    width: 3;
+    width: 1;
     height: 1fr;
     color: $primary-background-lighten-2;
 }
@@ -50,7 +50,7 @@ Splitter:hover, Splitter.-dragging {
 
 DetailPane {
     width: 1fr;
-    padding: 0 1 0 0;  /* the splitter's right column is the left gap */
+    padding: 0 1;
 }
 
 #project-summary {

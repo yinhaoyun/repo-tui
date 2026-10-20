@@ -1,6 +1,6 @@
 """A vertical divider that can be dragged with the mouse to resize the pane on
-its left (the project list) against the pane on its right. It is three
-columns wide with the line drawn in the middle, so it is easy to grab."""
+its left (the project list) against the pane on its right. It is one column
+wide: just the line."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ class Splitter(Widget):
         if not self._dragging or self.parent is None:
             return
         container = self.parent.region
-        # keep the drawn line (the middle column) under the pointer
+        # keep the line under the pointer
         width = event.screen_x - container.x - self.size.width // 2
         max_width = container.width - self.size.width - MIN_PANE_WIDTH
         width = max(MIN_PANE_WIDTH, min(width, max_width))
