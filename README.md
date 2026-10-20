@@ -535,12 +535,14 @@ never touch `.gitignore` or any actual git state.
 
 ## Scope / what's not here yet
 
-This is a solid first cut, not full parity with every `repo` subcommand.
-Implemented: status overview, sync (single project or whole tree), forall,
-start branch, diff view. Not yet implemented: `repo upload`, `repo abandon`,
-`repo prune`, topic-branch management across multiple projects, and manifest
-group filtering. The codebase is structured (`repo_backend.py` /
-`git_backend.py`) to make adding those straightforward.
+This doesn't cover every `repo` subcommand. Implemented: status overview,
+sync (one project, marked projects or the whole tree), fetch-only sync with
+an incoming report, detach, start / checkout / abandon branch (per project,
+across marked projects, or abandon across the tree), discard, unshallow,
+forall, manifest branch/file switching, and the diff, blame and history
+views. Not implemented: `repo upload`, `repo prune`, and manifest group
+filtering. Commands live in `repo_backend.py` and per-project git calls in
+`git_backend.py`, so new ones go there.
 
 ## Development
 
