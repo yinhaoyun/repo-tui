@@ -69,8 +69,13 @@ class Project:
     def off_manifest_branch(self) -> bool:
         if not self.manifest_revision:
             return False
-        # manifest revision may be a full ref, short branch name, or a sha/tag.
-        rev = self.manifest_revision.rsplit("/", 1)[-1]
+        # manifest revision may be a full ref, short branch name, or a sha/tag;
+        # a branch name may itself contain slashes (release/1.0).
+        rev = self.manifest_revision
+        for prefix in ("refs/heads/", "refs/tags/"):
+            if rev.startswith(prefix):
+                rev = rev[len(prefix):]
+                break
         return bool(self.current_branch) and self.current_branch != rev
 
     @property

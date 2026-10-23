@@ -9,6 +9,7 @@ from repo_tui import repo_backend
 
 from repo_tui.repo_backend import (
     RepoTreeError,
+    _stream_subprocess,
     _stream_subprocess_tty,
     abandon_args,
     forall_args,
@@ -280,3 +281,46 @@ def test_upgrade_launcher_copies_over_the_launcher_in_place(tmp_path):
     assert repo_backend.launcher_version(dest) == (2, 54)
     assert dest.stat().st_mode & 0o777 == 0o755
     assert repo_backend.launcher_version(tmp_path / "missing") is None
+
+
+_PROBE = r"""
+import os, sys
+print("stdin:", repr(sys.stdin.read()))
+print("prompt:", os.environ.get("GIT_TERMINAL_PROMPT"))
+try:
+    open("/dev/tty").close()
+    print("tty: open")
+except OSError:
+    print("tty: none")
+"""
+
+
+def test_stream_subprocess_keeps_the_command_off_the_terminal(tmp_path):
+    output = []
+
+    async def on_output(line):
+        output.append(line)
+
+    rc = asyncio.run(_stream_subprocess(tmp_path, [sys.executable, "-c", _PROBE], on_output))
+    assert rc == 0
+    assert output == ["stdin: ''", "prompt: 0", "tty: none"]
+
+
+_SPLIT_UTF8 = r"""
+import os, sys, time
+os.write(1, "中".encode()[:2]); time.sleep(0.3)
+os.write(1, "中".encode()[2:] + "文\n".encode())
+"""
+
+
+def test_stream_subprocess_tty_keeps_multibyte_chars_split_across_reads(tmp_path):
+    output = []
+
+    async def on_output(line):
+        output.append(line)
+
+    rc = asyncio.run(
+        _stream_subprocess_tty(tmp_path, [sys.executable, "-c", _SPLIT_UTF8], on_output, None)
+    )
+    assert rc == 0
+    assert output == ["中文"]

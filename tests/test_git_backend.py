@@ -359,3 +359,13 @@ def test_collect_status_non_ascii_names_and_rename_stats(tmp_path):
     assert (files["new.txt"].added, files["new.txt"].deleted) == (1, 0)
     assert "+x" in git_backend.read_file_diff(project, files["中文.txt"])
     assert git_backend.stage_file(project, files["中文.txt"])[0] == 0
+
+
+def test_failed_git_status_is_an_error_not_a_clean_project(tmp_path):
+    """git status failing (here: a .git pointing nowhere; in real trees,
+    e.g. "dubious ownership") must not look like a clean checkout."""
+    (tmp_path / ".git").write_text("gitdir: /nonexistent/repo-tui-test\n")
+    project = Project(path="p", name="p", abs_path=tmp_path)
+    git_backend.collect_project_status(project, IgnoreRules())
+    assert project.error.startswith("fatal:")
+    assert project.is_changed

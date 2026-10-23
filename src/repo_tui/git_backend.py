@@ -33,6 +33,30 @@ def _run_git(cwd, args: list[str]) -> str:
     return result.stdout
 
 
+class GitError(RuntimeError):
+    """A git command that must succeed failed; the message is git's own."""
+
+
+def _run_git_checked(cwd, args: list[str]) -> str:
+    """Like _run_git, but raises GitError with git's first error line when
+    git exits non-zero (e.g. "detected dubious ownership", a corrupt index)."""
+    result = subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=_GIT_TIMEOUT,
+    )
+    if result.returncode:
+        lines = [line.strip() for line in result.stderr.splitlines() if line.strip()]
+        reasons = [line for line in lines if line.startswith(("fatal:", "error:"))]
+        raise GitError(
+            (reasons or lines or [f"git {args[0]} exited with {result.returncode}"])[0]
+        )
+    return result.stdout
+
+
 def _parse_numstat(output: str) -> dict[str, tuple[int, int]]:
     """{path: (added, deleted)} from `git diff --numstat -z`. A rename is
     "added<TAB>deleted<TAB>" then its old and new paths as separate
@@ -109,7 +133,7 @@ def _parse_status_v2(output: str) -> tuple[str, bool, int, int, list[FileStatus]
 def collect_project_status(project: Project, ignore: IgnoreRules) -> Project:
     """Populate git status fields on `project` in place, and return it."""
     try:
-        status_out = _run_git(
+        status_out = _run_git_checked(
             project.abs_path, ["status", "--porcelain=v2", "--branch", "--untracked-files=all", "-z"]
         )
         branch, detached, ahead, behind, files = _parse_status_v2(status_out)

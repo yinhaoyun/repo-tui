@@ -11,6 +11,7 @@ for: sync, forall, start, checkout, abandon.
 from __future__ import annotations
 
 import asyncio
+import codecs
 import fcntl
 import os
 import pty
@@ -312,11 +313,19 @@ def load_projects(repo_root: Path) -> list[Project]:
 async def _stream_subprocess(
     cwd: Path, args: list[str], on_output: Optional[OutputCallback]
 ) -> int:
+    """Run `args`, streaming its combined output line by line. The command
+    never sees the TUI's terminal: stdin is /dev/null and it runs in its own
+    session (no controlling tty), and git is told not to prompt, so a
+    command that reads input or asks for credentials fails with a message
+    instead of stealing keystrokes or drawing over the screen."""
     process = await asyncio.create_subprocess_exec(
         *args,
         cwd=cwd,
+        stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
+        start_new_session=True,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
     )
     assert process.stdout is not None
     while True:
@@ -361,6 +370,7 @@ async def _stream_subprocess_tty(
         os.close(slave)
 
     loop = asyncio.get_running_loop()
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     buf = ""
     try:
         while True:
@@ -370,7 +380,7 @@ async def _stream_subprocess_tty(
                 break
             if not chunk:
                 break
-            buf += chunk.decode(errors="replace")
+            buf += decoder.decode(chunk)
             latest_progress = ""
             while (match := re.search(r"[\r\n]", buf)) is not None:
                 segment = _ANSI_RE.sub("", buf[: match.start()]).rstrip()
@@ -386,6 +396,7 @@ async def _stream_subprocess_tty(
             latest_progress = _ANSI_RE.sub("", buf).strip() or latest_progress
             if latest_progress and on_progress is not None:
                 await on_progress(latest_progress)
+        buf += decoder.decode(b"", final=True)
         if buf.strip() and on_output is not None:
             await on_output(_ANSI_RE.sub("", buf).rstrip())
     finally:

@@ -62,3 +62,12 @@ def test_ahead_behind_summary():
     assert p.is_changed
     assert "↑2" in p.branch_summary
     assert "↓1" in p.branch_summary
+
+
+def test_off_manifest_branch_compares_whole_name_with_slashes():
+    p = make_project(current_branch="release/1.0", manifest_revision="refs/heads/release/1.0")
+    assert not p.off_manifest_branch
+    p = make_project(current_branch="release/1.0", manifest_revision="release/1.0")
+    assert not p.off_manifest_branch
+    p = make_project(current_branch="1.0", manifest_revision="refs/heads/release/1.0")
+    assert p.off_manifest_branch
