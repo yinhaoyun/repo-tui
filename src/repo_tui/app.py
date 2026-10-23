@@ -109,6 +109,9 @@ class RepoTuiApp(App):
         # only pops up when something changed.
         self._update_behind_notified = 0
         self._update_error_notified = ""
+        # Launcher upgrades (cp commands) already offered and turned down,
+        # so every later repo command doesn't ask again this session.
+        self._launcher_upgrades_declined: set[str] = set()
         self.sync_report: SyncReport | None = None
         # Bumped by every foreground status scan, so a background scan that
         # was overtaken by one throws its (now older) results away.
@@ -933,6 +936,16 @@ class RepoTuiApp(App):
             header.set_syncing(False)
             await busy.dismiss()
         result = ResultScreen(title, log_lines, returncode, report)
+        self._show_result(title, result, report, open_report)
+        upgrade = repo_backend.find_launcher_upgrade(log_lines)
+        if upgrade is not None:
+            await self._offer_launcher_upgrade(upgrade)
+
+    def _show_result(
+        self, title: str, result: ResultScreen, report: SyncReport | None, open_report: bool
+    ) -> None:
+        """Show a finished repo command: its sync report, a toast, or its
+        output (see _run_and_refresh)."""
         if (
             open_report
             and report is not None
@@ -958,6 +971,42 @@ class RepoTuiApp(App):
                 severity=result.severity,
                 timeout=10,
             )
+
+    async def _offer_launcher_upgrade(self, upgrade: repo_backend.LauncherUpgrade) -> None:
+        """repo said a newer launcher is available and printed the cp to
+        install it; offer to run that cp (once per session if declined)."""
+        if upgrade.command in self._launcher_upgrades_declined:
+            return
+        new = await to_thread(repo_backend.launcher_version, upgrade.source)
+        old = await to_thread(repo_backend.launcher_version, upgrade.dest)
+        if new is not None and old is not None and old >= new:
+            return  # already upgraded since repo printed it
+        installed = ".".join(map(str, old)) if old else "?"
+        body = (
+            f"repo reported a newer launcher: {escape(installed)} → {escape(upgrade.version)}\n\n"
+            f"[dim]$ {escape(upgrade.command)}[/]"
+        )
+
+        def handle(confirmed: bool | None) -> None:
+            if confirmed:
+                self.run_worker(self._upgrade_launcher(upgrade), group="launcher")
+            else:
+                self._launcher_upgrades_declined.add(upgrade.command)
+
+        self.push_screen(ConfirmModal("Upgrade the repo launcher?", body), handle)
+
+    async def _upgrade_launcher(self, upgrade: repo_backend.LauncherUpgrade) -> None:
+        try:
+            await to_thread(repo_backend.upgrade_launcher, upgrade)
+        except OSError as exc:
+            self.notify(
+                escape(str(exc)), title="repo launcher upgrade failed", severity="error", timeout=10
+            )
+            return
+        self.notify(
+            f"repo launcher upgraded to {escape(upgrade.version)}: {escape(str(upgrade.dest))}",
+            timeout=6,
+        )
 
     async def _compare_commits(
         self,

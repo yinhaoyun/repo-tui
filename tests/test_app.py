@@ -2115,3 +2115,83 @@ def test_forall_picks_where_and_remembers_the_command(dirty_tree, monkeypatch):
             assert field.value == "half"  # back to what was being typed
 
     asyncio.run(scenario())
+
+
+def _write_launcher(path, version):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"#!/usr/bin/env python3\nVERSION = {version}\n")
+    return path
+
+
+def test_sync_offers_repos_launcher_upgrade_and_runs_the_cp(dirty_tree, tmp_path, monkeypatch):
+    source = _write_launcher(dirty_tree / ".repo" / "repo" / "repo", "(2, 54)")
+    dest = _write_launcher(tmp_path / "bin" / "repo", "(2, 36)")
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+
+        async def ok_sync(repo_root, paths=None, on_output=None, on_progress=None, jobs=None):
+            await on_output("... A new version of repo (2.54) is available.")
+            await on_output("... You should upgrade soon:")
+            await on_output(f"    cp {source} {dest}")
+            return 0
+
+        monkeypatch.setattr(repo_backend, "sync_projects", ok_sync)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("space", "S")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            confirm = app.screen_stack[-1]
+            assert isinstance(confirm, ConfirmModal)
+            assert "2.36 → 2.54" in confirm._body
+            assert isinstance(app.screen_stack[-2], ResultScreen)
+            await pilot.press("y")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+
+            assert "VERSION = (2, 54)" in dest.read_text()
+            assert isinstance(app.screen_stack[-1], ResultScreen)
+
+    asyncio.run(scenario())
+
+
+def test_declined_launcher_upgrade_is_not_offered_again(dirty_tree, tmp_path, monkeypatch):
+    source = _write_launcher(dirty_tree / ".repo" / "repo" / "repo", "(2, 54)")
+    dest = _write_launcher(tmp_path / "bin" / "repo", "(2, 36)")
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+
+        async def ok_sync(repo_root, paths=None, on_output=None, on_progress=None, jobs=None):
+            await on_output("... A new version of repo (2.54) is available.")
+            await on_output(f"    cp {source} {dest}")
+            return 0
+
+        monkeypatch.setattr(repo_backend, "sync_projects", ok_sync)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.press("space", "S")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert isinstance(app.screen_stack[-1], ConfirmModal)
+            await pilot.press("n")
+            await pilot.pause()
+            await pilot.press("escape")  # close the output
+            await pilot.pause()
+
+            await pilot.press("space", "S")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert not isinstance(app.screen_stack[-1], ConfirmModal)
+            assert "VERSION = (2, 36)" in dest.read_text()
+
+    asyncio.run(scenario())

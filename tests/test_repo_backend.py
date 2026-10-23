@@ -1,8 +1,11 @@
 import asyncio
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
+
+from repo_tui import repo_backend
 
 from repo_tui.repo_backend import (
     RepoTreeError,
@@ -216,3 +219,64 @@ def test_switch_manifest_inits_then_syncs_unless_init_fails(tmp_path, monkeypatc
 def test_forall_args_head_each_projects_output():
     assert forall_args("git log -1") == ["repo", "forall", "-p", "-c", "git log -1"]
     assert forall_args("pwd", ["a", "b"]) == ["repo", "forall", "a", "b", "-p", "-c", "pwd"]
+
+
+def _launcher(path, version):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"#!/usr/bin/env python3\nVERSION = {version}\nKEYRING_VERSION = (2, 3)\n")
+    path.chmod(0o755)
+    return path
+
+
+def test_find_launcher_upgrade_reads_repos_cp_suggestion():
+    # As main.py's _CheckWrapperVersion logs it (a path with a space, too).
+    lines = [
+        "",
+        "... A new version of repo (2.54) is available.",
+        "... You should upgrade soon:",
+        "    cp /src/my tree/.repo/repo/repo /home/me/.bin/repo",
+        "Fetching: 100% (2/2), done",
+    ]
+    upgrade = repo_backend.find_launcher_upgrade(lines)
+    assert upgrade == repo_backend.LauncherUpgrade(
+        "2.54", Path("/src/my tree/.repo/repo/repo"), Path("/home/me/.bin/repo")
+    )
+    assert upgrade.command == "cp /src/my tree/.repo/repo/repo /home/me/.bin/repo"
+
+
+def test_find_launcher_upgrade_handles_the_too_old_error():
+    lines = [
+        "repo: error:",
+        "!!! Your version of repo 1.12 is too old.",
+        "!!! We need at least version 1.15.",
+        "!!! A new version of repo (2.54) is available.",
+        "!!! You must upgrade before you can continue:",
+        "",
+        "    cp /t/.repo/repo/repo /usr/local/bin/repo",
+    ]
+    upgrade = repo_backend.find_launcher_upgrade(lines)
+    assert upgrade is not None and upgrade.dest == Path("/usr/local/bin/repo")
+
+
+def test_find_launcher_upgrade_ignores_unwritable_launcher_and_stray_cp():
+    unwritable = [
+        "... A new version of repo (2.54) is available.",
+        "... New version is available at: /t/.repo/repo/repo",
+        "... The launcher is run from: /usr/bin/repo",
+        "!!! The launcher is not writable.  Please talk to your sysadmin or distro",
+    ]
+    assert repo_backend.find_launcher_upgrade(unwritable) is None
+    # A cp line with no "new version" notice before it is just output.
+    assert repo_backend.find_launcher_upgrade(["cp /t/.repo/repo/repo /x"]) is None
+
+
+def test_upgrade_launcher_copies_over_the_launcher_in_place(tmp_path):
+    source = _launcher(tmp_path / "tree" / ".repo" / "repo" / "repo", "(2, 54)")
+    dest = _launcher(tmp_path / "bin" / "repo", "(2, 36)")
+    assert repo_backend.launcher_version(dest) == (2, 36)
+
+    repo_backend.upgrade_launcher(repo_backend.LauncherUpgrade("2.54", source, dest))
+
+    assert repo_backend.launcher_version(dest) == (2, 54)
+    assert dest.stat().st_mode & 0o777 == 0o755
+    assert repo_backend.launcher_version(tmp_path / "missing") is None

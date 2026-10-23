@@ -15,9 +15,11 @@ import fcntl
 import os
 import pty
 import re
+import shutil
 import struct
 import termios
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
@@ -537,3 +539,64 @@ def init_depth(repo_root: Path) -> str:
         ).strip()
     except Exception:
         return ""
+
+
+# repo checks its launcher's version on every run (main.py's
+# _CheckWrapperVersion) and, when the copy under .repo/repo/ is newer, logs:
+#
+#   ... A new version of repo (2.54) is available.
+#   ... You should upgrade soon:
+#       cp /tree/.repo/repo/repo /home/me/bin/repo
+#
+# (or "!!! ... You must upgrade before you can continue:" with the same cp
+# line when the launcher is too old to run at all). When the launcher isn't
+# writable it prints "The launcher is not writable" and no cp line, so
+# there's nothing to offer.
+_NEW_VERSION_RE = re.compile(r"A new version of repo \(([0-9.]+)\) is available")
+# repo doesn't quote the paths; the source always ends in .repo/repo/repo,
+# which tells us where it stops even if a path has a space in it.
+_CP_RE = re.compile(r"^\s*cp (.*?/\.repo/repo/repo) (.+?)\s*$")
+_LAUNCHER_VERSION_RE = re.compile(r"^VERSION = \(\s*(\d+)\s*,\s*(\d+)", re.MULTILINE)
+
+
+@dataclass(frozen=True)
+class LauncherUpgrade:
+    """repo's suggested `cp <new launcher> <launcher in use>`."""
+
+    version: str  # the new launcher's version, as repo printed it
+    source: Path
+    dest: Path
+
+    @property
+    def command(self) -> str:
+        return f"cp {self.source} {self.dest}"
+
+
+def find_launcher_upgrade(lines: list[str]) -> Optional[LauncherUpgrade]:
+    """The launcher upgrade repo asked for in a command's output, if any."""
+    version = None
+    for line in lines:
+        match = _NEW_VERSION_RE.search(line)
+        if match:
+            version = match.group(1)
+            continue
+        match = _CP_RE.match(line) if version else None
+        if match:
+            return LauncherUpgrade(version, Path(match.group(1)), Path(match.group(2)))
+    return None
+
+
+def launcher_version(path: Path) -> Optional[tuple]:
+    """The VERSION a repo launcher script declares, e.g. (2, 54)."""
+    try:
+        text = path.read_text(errors="replace")
+    except OSError:
+        return None
+    match = _LAUNCHER_VERSION_RE.search(text)
+    return (int(match.group(1)), int(match.group(2))) if match else None
+
+
+def upgrade_launcher(upgrade: LauncherUpgrade) -> None:
+    """Do repo's `cp`: overwrite the launcher in place (through a symlink,
+    keeping its permissions), as cp onto an existing file does."""
+    shutil.copyfile(upgrade.source, upgrade.dest)

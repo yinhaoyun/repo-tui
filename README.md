@@ -331,6 +331,14 @@ current project, jobs running) and the output tail. Sync runs with
 jobs = 4
 ```
 
+When `repo` says a new version of its launcher is available ("A new version
+of repo (2.54) is available … You should upgrade soon: cp
+<tree>/.repo/repo/repo ~/bin/repo"), which it can do on any `repo` command,
+repo-tui offers to run that `cp` for you once the command has finished (y/N,
+showing the installed and new versions). If you decline, it doesn't ask again
+until you restart repo-tui. When repo reports that the launcher isn't writable,
+there's no `cp` to run, so nothing is offered.
+
 ## History (`l`)
 
 `l` on the project list opens the project's history; on the file list, the
