@@ -97,7 +97,7 @@ class ActionPanel(ModalScreen[Optional[str]]):
         target = self._target or "(no project selected)"
         if self._file_target:
             target += f" ─ file: {self._file_target}"
-        box.border_title = f"ACTION ─ target: {target}"
+        box.border_title = f"ACTION ─ target: {escape(target)}"
         box.border_subtitle = f"{key('Esc')} / {key('Space')} exit"
         yield box
         yield Static(

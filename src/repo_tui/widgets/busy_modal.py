@@ -43,7 +43,7 @@ class BusyModal(ModalScreen[None]):
 
     def compose(self):
         with Vertical(id="busy-box"):
-            yield Static(f"[b]{self._title}[/]", id="busy-title")
+            yield Static(f"[b]{escape(self._title)}[/]", id="busy-title")
             if self._command:
                 yield Static(f"[dim]$ {escape(self._command)}[/]", id="busy-command")
             yield ProgressBar(total=None, show_eta=False, id="busy-bar")

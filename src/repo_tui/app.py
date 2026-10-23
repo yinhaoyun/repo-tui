@@ -700,7 +700,7 @@ class RepoTuiApp(App):
             elif choice in actions:
                 actions[choice]()
 
-        self.push_screen(ContextMenu(f"{project.path}/{file.path}", options), handle)
+        self.push_screen(ContextMenu(escape(f"{project.path}/{file.path}"), options), handle)
 
     def action_project_menu(self) -> None:
         project = self._selected_project()
@@ -1204,7 +1204,7 @@ class RepoTuiApp(App):
                 options = [(b, b) for b in names]
             else:
                 options = [(b, f"{b}  — {len(holders[b])} of {len(projects)}") for b in names]
-            self.push_screen(ContextMenu(f"Switch branch — {where}", options), handle_choice)
+            self.push_screen(ContextMenu(f"Switch branch — {escape(where)}", options), handle_choice)
         else:
             self._prompt_branch_name(
                 f"{where} {'has' if len(projects) == 1 else 'have'} no other local branches. "
@@ -1280,7 +1280,7 @@ class RepoTuiApp(App):
             elif choice:
                 self._abandon(project.path, [(project, choice)], choice, [project.path])
 
-        self.push_screen(ContextMenu(f"Abandon branch — {project.path}", options), handle)
+        self.push_screen(ContextMenu(f"Abandon branch — {escape(project.path)}", options), handle)
 
     def _prompt_abandon_tree(self, projects: list[Project] | None = None) -> None:
         """Space K: pick a branch name and delete it in every project that
@@ -1572,7 +1572,7 @@ class RepoTuiApp(App):
             elif choice == "unshallow":
                 self._unshallow_project(project)
 
-        self.push_screen(ContextMenu(project.path, options), handle)
+        self.push_screen(ContextMenu(escape(project.path), options), handle)
 
     # -- action panel (Space) and the actions it dispatches -------------
 
@@ -1878,7 +1878,7 @@ class RepoTuiApp(App):
         labels = {
             "marked": f"Marked projects ({len(marked)})",
             "tree": f"Every project ({len(self.projects)})",
-            "project": f"This project — {project.path}" if project else "",
+            "project": f"This project — {escape(project.path)}" if project else "",
             "changed": f"Changed projects ({len(changed)})",
         }
 

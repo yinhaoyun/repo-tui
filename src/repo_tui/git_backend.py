@@ -34,31 +34,41 @@ def _run_git(cwd, args: list[str]) -> str:
 
 
 def _parse_numstat(output: str) -> dict[str, tuple[int, int]]:
+    """{path: (added, deleted)} from `git diff --numstat -z`. A rename is
+    "added<TAB>deleted<TAB>" then its old and new paths as separate
+    NUL-terminated fields; it's keyed by the new path, like git status."""
     stats: dict[str, tuple[int, int]] = {}
-    for line in output.splitlines():
-        parts = line.split("\t")
+    fields = output.split("\0")
+    i = 0
+    while i < len(fields):
+        parts = fields[i].split("\t", 2)
+        i += 1
         if len(parts) != 3:
             continue
         added_s, deleted_s, path = parts
-        if "\t" in path or "=>" in path:
-            # renamed path in the form "old => new" or "{old => new}/rest";
-            # numstat with default settings already resolves this, so just
-            # take the raw string as the path key.
-            pass
-        added = 0 if added_s == "-" else int(added_s)
-        deleted = 0 if deleted_s == "-" else int(deleted_s)
+        if not path:  # rename: old path, then new path
+            if i + 1 >= len(fields):
+                break
+            path = fields[i + 1]
+            i += 2
+        added = int(added_s) if added_s.isdigit() else 0  # "-" for binary
+        deleted = int(deleted_s) if deleted_s.isdigit() else 0
         stats[path] = (added, deleted)
     return stats
 
 
 def _parse_status_v2(output: str) -> tuple[str, bool, int, int, list[FileStatus]]:
+    """Parse `git status --porcelain=v2 --branch -z`. With -z, paths come
+    verbatim (no C-style quoting of non-ASCII names) and a rename's original
+    path is the NUL-terminated field after the entry."""
     branch = ""
     detached = False
     ahead = 0
     behind = 0
     files: list[FileStatus] = []
 
-    for line in output.splitlines():
+    entries = iter(output.split("\0"))
+    for line in entries:
         if line.startswith("# branch.head "):
             branch = line[len("# branch.head "):]
             detached = branch == "(detached)"
@@ -75,25 +85,23 @@ def _parse_status_v2(output: str) -> tuple[str, bool, int, int, list[FileStatus]
             # 1 XY sub mH mI mW hH hI path
             fields = line.split(" ", 8)
             xy = fields[1]
-            path = fields[-1]
-            files.append(FileStatus(path=path, index_status=xy[0], worktree_status=xy[1]))
+            files.append(FileStatus(path=fields[-1], index_status=xy[0], worktree_status=xy[1]))
         elif line.startswith("2 "):
-            # 2 XY sub mH mI mW hH hI X<score> path<TAB>origPath
+            # 2 XY sub mH mI mW hH hI X<score> path, then origPath as its own field
             fields = line.split(" ", 9)
             xy = fields[1]
-            path, _, orig_path = fields[-1].partition("\t")
+            orig_path = next(entries, "")
             files.append(
                 FileStatus(
-                    path=path, index_status=xy[0], worktree_status=xy[1], orig_path=orig_path
+                    path=fields[-1], index_status=xy[0], worktree_status=xy[1],
+                    orig_path=orig_path,
                 )
             )
         elif line.startswith("u "):
             fields = line.split(" ", 10)
-            path = fields[-1]
-            files.append(FileStatus(path=path, index_status="U", worktree_status="U"))
+            files.append(FileStatus(path=fields[-1], index_status="U", worktree_status="U"))
         elif line.startswith("? "):
-            path = line[2:]
-            files.append(FileStatus(path=path, index_status="?", worktree_status="?"))
+            files.append(FileStatus(path=line[2:], index_status="?", worktree_status="?"))
 
     return branch, detached, ahead, behind, files
 
@@ -102,12 +110,12 @@ def collect_project_status(project: Project, ignore: IgnoreRules) -> Project:
     """Populate git status fields on `project` in place, and return it."""
     try:
         status_out = _run_git(
-            project.abs_path, ["status", "--porcelain=v2", "--branch", "--untracked-files=all"]
+            project.abs_path, ["status", "--porcelain=v2", "--branch", "--untracked-files=all", "-z"]
         )
         branch, detached, ahead, behind, files = _parse_status_v2(status_out)
 
-        unstaged = _parse_numstat(_run_git(project.abs_path, ["diff", "--numstat"]))
-        staged = _parse_numstat(_run_git(project.abs_path, ["diff", "--cached", "--numstat"]))
+        unstaged = _parse_numstat(_run_git(project.abs_path, ["diff", "--numstat", "-z"]))
+        staged = _parse_numstat(_run_git(project.abs_path, ["diff", "--cached", "--numstat", "-z"]))
 
         for f in files:
             a1, d1 = unstaged.get(f.path, (0, 0))

@@ -8,17 +8,17 @@ from repo_tui.models import Project
 
 
 def test_parse_numstat_basic():
-    out = "3\t1\tfoo.py\n0\t0\tbar.txt\n"
+    out = "3\t1\tfoo.py\x000\t0\tbar.txt\x00"
     assert _parse_numstat(out) == {"foo.py": (3, 1), "bar.txt": (0, 0)}
 
 
 def test_parse_numstat_binary_file():
-    out = "-\t-\timage.png\n"
+    out = "-\t-\timage.png\x00"
     assert _parse_numstat(out) == {"image.png": (0, 0)}
 
 
 def test_parse_status_v2_branch_and_ahead_behind():
-    out = "\n".join(
+    out = "\0".join(
         [
             "# branch.oid abcdef",
             "# branch.head main",
@@ -42,7 +42,7 @@ def test_parse_status_v2_detached():
 
 
 def test_parse_status_v2_files():
-    out = "\n".join(
+    out = "\0".join(
         [
             "# branch.head main",
             "1 M. N... 100644 100644 100644 aaaa bbbb README.md",
@@ -60,10 +60,10 @@ def test_parse_status_v2_files():
 
 
 def test_parse_status_v2_rename():
-    out = "\n".join(
+    out = "\0".join(
         [
             "# branch.head main",
-            "2 R. N... 100644 100644 100644 aaaa bbbb R100 new_name.py\told_name.py",
+            "2 R. N... 100644 100644 100644 aaaa bbbb R100 new_name.py\0old_name.py",
         ]
     )
     _, _, _, _, files = _parse_status_v2(out)
@@ -80,7 +80,7 @@ def test_collect_all_reports_progress_per_project(tmp_path, monkeypatch):
 
 
 def test_parse_status_v2_rename_keeps_orig_path():
-    out = "2 R. N... 100644 100644 100644 abc abc R100 new.txt\told.txt"
+    out = "2 R. N... 100644 100644 100644 abc abc R100 new.txt\0old.txt\0"
     *_, files = _parse_status_v2(out)
     assert (files[0].path, files[0].orig_path) == ("new.txt", "old.txt")
 
@@ -325,3 +325,37 @@ def test_upstream_commit_and_incoming_changes(tmp_path):
     assert text.startswith("HEAD ") and "upstream" in text.splitlines()[0]
     assert "Upstream commits a sync would bring in (2):" in text
     assert "On HEAD but not upstream (1):" in text
+
+
+def test_parse_numstat_rename_keyed_by_new_path():
+    out = "2\t1\t\x00old.txt\x00new.txt\x001\t0\tother.txt\x00"
+    assert _parse_numstat(out) == {"new.txt": (2, 1), "other.txt": (1, 0)}
+
+
+def test_collect_status_non_ascii_names_and_rename_stats(tmp_path):
+    """Names git would C-quote come through verbatim, so diff/stage work on
+    them; a staged rename keeps its line counts."""
+    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True, env=env)
+
+    git("init", "-q")
+    (tmp_path / "old.txt").write_text("a\nb\nc\nd\n")
+    git("add", ".")
+    git("commit", "-q", "-m", "init")
+    git("mv", "old.txt", "new.txt")
+    (tmp_path / "new.txt").write_text("a\nb\nc\nd\ne\n")
+    git("add", "new.txt")
+    (tmp_path / "中文.txt").write_text("x\n")
+    (tmp_path / "sp ace.txt").write_text("y\n")
+
+    project = Project(path="p", name="p", abs_path=tmp_path)
+    git_backend.collect_project_status(project, IgnoreRules())
+    files = {f.path: f for f in project.files}
+    assert set(files) == {"new.txt", "中文.txt", "sp ace.txt"}
+    assert files["new.txt"].orig_path == "old.txt"
+    assert (files["new.txt"].added, files["new.txt"].deleted) == (1, 0)
+    assert "+x" in git_backend.read_file_diff(project, files["中文.txt"])
+    assert git_backend.stage_file(project, files["中文.txt"])[0] == 0

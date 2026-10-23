@@ -2195,3 +2195,44 @@ def test_declined_launcher_upgrade_is_not_offered_again(dirty_tree, tmp_path, mo
             assert "VERSION = (2, 36)" in dest.read_text()
 
     asyncio.run(scenario())
+
+
+def test_brackets_in_commands_and_paths_show_literally(dirty_tree, monkeypatch):
+    """A forall command or a path with "[x]" or "[/]" in it is shown as typed
+    in the busy dialog and in menu titles, not read as markup (which drops
+    "[x]" and crashes on "[/]")."""
+
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        release = asyncio.Event()
+
+        async def slow_forall(repo_root, command, paths=None, on_output=None):
+            await release.wait()
+            return 0
+
+        monkeypatch.setattr(repo_backend, "forall", slow_forall)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+
+            command = "echo [x] [/] done"
+            app._run_forall(command, None, None, "every project")
+            await pilot.pause()
+            busy = app.screen_stack[-1]
+            assert isinstance(busy, BusyModal)
+            assert command in str(busy.query_one("#busy-title").render())
+            release.set()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            app.pop_screen()  # the result screen
+
+            project = app.projects[0]
+            project.path = "pages/[id]/[/]"
+            app._open_context_menu(project)
+            await pilot.pause()
+            menu = app.screen_stack[-1]
+            assert isinstance(menu, ContextMenu)
+            assert "pages/[id]/[/]" in str(menu.query_one("#menu-title").render())
+
+    asyncio.run(scenario())
