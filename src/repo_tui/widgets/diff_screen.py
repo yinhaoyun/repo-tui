@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Tuple
 
-from rich.markup import escape
+from ..markup import escape
 from rich.text import Text
 from textual.containers import Vertical
 from textual.screen import ModalScreen

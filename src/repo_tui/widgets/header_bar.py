@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 
-from rich.markup import escape
+from ..markup import escape
 from textual import events
 from textual.containers import Horizontal
 from textual.widgets import Static

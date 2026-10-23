@@ -1366,13 +1366,17 @@ def test_update_available_shows_in_header_and_U_updates_then_offers_restart(
     from repo_tui import self_update
     from repo_tui.widgets.header_bar import HeaderBar
 
-    check = self_update.UpdateCheck(behind=2, commits=["abc1234 new thing", "def5678 fix"])
+    # A stray "[" in a commit subject used to swallow the dialog's own markup
+    # and crash the app with a MarkupError.
+    check = self_update.UpdateCheck(
+        behind=2, commits=["abc1234 new thing", "def5678 jump between files (]/[)"]
+    )
     monkeypatch.setattr(self_update, "check_for_update", lambda **kw: check)
     updates = []
 
     def fake_update(say, batch=False):
         updates.append(batch)
-        say("pulled new commits:\nabc1234 new thing", False)
+        say("pulled new commits:\nabc1234 new thing\ndef5678 jump between files (]/[)", False)
         say("done (aaaa -> bbbb).", False)
         return 0
 
@@ -1399,7 +1403,8 @@ def test_update_available_shows_in_header_and_U_updates_then_offers_restart(
             await pilot.pause()
             confirm = app.screen_stack[-1]
             assert isinstance(confirm, ConfirmModal)
-            assert "new thing" in str(confirm.query_one("#confirm-body").render())
+            body = str(confirm.query_one("#confirm-body").render())
+            assert "new thing" in body and "(]/[)" in body
             assert updates == []  # nothing before y
 
             await pilot.press("y")

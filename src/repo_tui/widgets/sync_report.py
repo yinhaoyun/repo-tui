@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 
-from rich.markup import escape
+from ..markup import escape
 from rich.text import Text
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen

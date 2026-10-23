@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from rich.markup import escape
+from ..markup import escape
 from textual import events
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical

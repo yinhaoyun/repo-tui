@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from rich.markup import escape
+from ..markup import escape
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, OptionList, Static
