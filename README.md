@@ -262,7 +262,7 @@ and the focus line's menu key always stay, and the full list is in `?`.
 | `Space` then `c` | `repo checkout <branch>` — switch to an existing local branch (pick from a list, or type one) |
 | `Space` then `k` | `repo abandon <branch>` — delete one of the selected project's local branches, or all of them (pick from a list; asks y/N first, showing each branch's unpushed commits) |
 | `Space` then `K` | `repo abandon <branch>` across the tree — delete a branch (e.g. one made with `repo start --all`) in every project that has it (pick from a list with how many projects have each; asks y/N first) |
-| `Space` then `x` | discard the selected project's changes so its Stat is clean: tracked changes revert to HEAD, untracked files are deleted; files hidden by your ignore rules, commits and the branch are kept (asks y/N first) |
+| `Space` then `x` | discard the selected project's changes so its Stat is clean: tracked changes revert to HEAD, untracked and newly added (staged, not in HEAD) files are deleted; files hidden by your ignore rules, commits and the branch are kept (asks y/N first) |
 | `Space` then `h` | unshallow the selected project only: `git fetch --unshallow <remote>` to get its full history (asks y/N first; also in the right-click menu of a shallow project) |
 | `Space` then `f` | `repo forall -p -c <command>` — prompts for the command (`↑`/`↓` recall earlier ones, kept in `~/.config/repo-tui/forall_history`), then where to run it: every project (the first choice, so `enter` `enter` works as before), the selected project, or just the changed ones. `-p` heads each project's output with its name. The command gets no input and can't prompt (stdin is empty and git won't ask for credentials), so use non-interactive commands |
 | `Space` then `M` | switch the whole tree to another manifest branch and/or manifest file: `repo init -b <branch> -m <file>`, then `repo sync` everything (see below) |
@@ -283,7 +283,7 @@ file at the cursor, and the bottom bar shows them first:
 | `y` | copy the file's absolute path (instead of the project's) |
 | `Space` then `a` | stage the file (`git add -A`, so deletions and both sides of a rename too) |
 | `Space` then `u` | unstage it (`git restore --staged`), keeping your edits |
-| `Space` then `r` | revert it: tracked changes back to HEAD (both staged and unstaged), an untracked file deleted — asks y/N first |
+| `Space` then `r` | revert it: tracked changes back to HEAD (both staged and unstaged), an untracked or newly added file deleted — asks y/N first |
 
 The diff and blame (`b`) views are coloured in the theme's colours:
 added/removed lines and hunk headers; commit ids; and blame lines that
@@ -321,7 +321,13 @@ discard, copy) are also available as a menu: right-click a project row, or press
 in desktop apps).
 
 While a `repo` command or a status refresh (at startup, `r`/`R`, and after every
-`repo` command) runs, a dialog blocks all other keys and clicks. A refresh
+`repo` command) runs, a dialog blocks all other keys and clicks. To stop a
+command (sync, fetch, forall, branch commands, unshallow, manifest switch),
+press `esc` twice within 3 seconds: one stray `esc` does nothing. repo-tui
+stops the command and everything it started (SIGTERM, then SIGKILL after 5
+seconds), then rescans and shows the output as "cancelled"; a cancelled sync
+still gets its sync report for whatever had already moved. A status refresh
+and a discard can't be cancelled. A refresh
 shows how many projects have been scanned so far. For `repo sync` it shows the command line, repo's live progress (percentage,
 current project, jobs running) and the output tail. Sync runs with
 `-jN` parallel jobs: one per CPU by default, or set it in the config file:
@@ -486,7 +492,7 @@ close with `esc`. Changes apply immediately and are saved to
 | Behaviour | Show command output — after a repo command, always open its output, or only when it failed or printed errors/warnings (a toast otherwise) | always (default) / only on errors/warnings | `[behaviour] result_screen` (`always`/`problems`) |
 | Behaviour | Check for repo-tui updates — in the background, at startup and then on an interval, show "⬆ repo-tui update (N)" in the header | on (default) / off | `[behaviour] check_updates` |
 | Behaviour | Update check interval — how often to re-check while running | every 1/3/6 (default)/12/24 h | `[behaviour] update_check_hours` |
-| Behaviour | Auto-refresh status — rescan in the background, no blocking dialog; skipped while a dialog or command is open | off (default), every 1/2/5/10/15/30/60 min | `[behaviour] auto_refresh_minutes` |
+| Behaviour | Auto-refresh status — rescan in the background, no blocking dialog; skipped while a dialog or command is open. It doesn't take git's index lock, so it can't make a git command you run at the same time fail with "index.lock exists" | off (default), every 1/2/5/10/15/30/60 min | `[behaviour] auto_refresh_minutes` |
 
 A value saved from the settings screen wins over the config file, so the
 config file (below) sets your defaults and the screen overrides them per
@@ -548,8 +554,10 @@ sync (one project, marked projects or the whole tree), fetch-only sync with
 an incoming report, detach, start / checkout / abandon branch (per project,
 across marked projects, or abandon across the tree), discard, unshallow,
 forall, manifest branch/file switching, and the diff, blame and history
-views. Not implemented: `repo upload`, `repo prune`, and manifest group
-filtering. Commands live in `repo_backend.py` and per-project git calls in
+views. Projects come from the manifest with its `<include>`s, then the
+local manifests (`.repo/local_manifest.xml` and `.repo/local_manifests/*.xml`,
+by name), applying `<remove-project>` and `<extend-project>` as repo does. Not
+implemented: `repo upload`, `repo prune`, and manifest group filtering. Commands live in `repo_backend.py` and per-project git calls in
 `git_backend.py`, so new ones go there.
 
 ## Development

@@ -232,8 +232,14 @@ class RepoTuiApp(App):
         header = self.query_one("#header", HeaderBar)
         header.set_syncing(True)
         try:
+            # No index.lock: this runs unasked, maybe while the user runs git.
             await to_thread(
-                git_backend.collect_all, snapshot, self.config.ignore, self.config.max_workers
+                git_backend.collect_all,
+                snapshot,
+                self.config.ignore,
+                self.config.max_workers,
+                None,
+                False,
             )
         finally:
             header.set_syncing(False)
@@ -840,6 +846,8 @@ class RepoTuiApp(App):
         project, file = selected
         if file.is_untracked:
             what = "[b]This untracked file is deleted.[/]"
+        elif file.is_new:
+            what = "[b]This newly added file is deleted[/]: it isn't in HEAD."
         elif file.orig_path:
             what = f"The rename from {escape(file.orig_path)} is undone, back to HEAD."
         else:
@@ -877,6 +885,7 @@ class RepoTuiApp(App):
         open_report: bool = False,
         reload_tree: bool = False,
         incoming: bool = False,
+        cancellable: bool = True,
     ) -> None:
         """Run a repo command behind a blocking BusyModal, refresh status,
         then show the command's output in a ResultScreen that pulls out any
@@ -893,10 +902,29 @@ class RepoTuiApp(App):
         (manifest switch), the project list is re-read from the manifest
         before the rescan. With `incoming` (a fetch), what each project's
         upstream has that HEAD doesn't becomes the command's report, opened
-        like a sync's -- even when it's empty, since that's the answer."""
+        like a sync's -- even when it's empty, since that's the answer.
+        With `cancellable` (every command that is a subprocess), esc esc in
+        the dialog stops it; the rescan and result still follow, so what a
+        partial sync did is shown."""
         header = self.query_one("#header", HeaderBar)
         header.set_syncing(True)
-        busy = BusyModal(title, command=command, jobs=jobs)
+        command_task: asyncio.Future | None = None
+        cancelled = False
+
+        def cancel() -> bool:
+            # Before the command starts (HEADs still being recorded) it is
+            # never started; once it has finished there's nothing to stop.
+            nonlocal cancelled
+            if command_task is None:
+                cancelled = True
+            elif not command_task.done():
+                cancelled = True
+                command_task.cancel()
+            return cancelled
+
+        busy = BusyModal(
+            title, command=command, jobs=jobs, on_cancel=cancel if cancellable else None
+        )
         await self.push_screen(busy)
         log_lines: list[str] = []
         scoped = only if only else ([project] if project else None)
@@ -910,7 +938,8 @@ class RepoTuiApp(App):
             before = await to_thread(
                 git_backend.head_commits, targets, self.config.max_workers
             )
-            busy.set_phase("Running…")
+            if not cancelled:
+                busy.set_phase("Running…")
 
         async def on_output(line: str) -> None:
             log_lines.append(line)
@@ -921,7 +950,16 @@ class RepoTuiApp(App):
 
         try:
             try:
-                returncode = await coro_factory(on_output, on_progress)
+                if cancelled:  # esc esc before it started
+                    raise asyncio.CancelledError
+                command_task = asyncio.ensure_future(coro_factory(on_output, on_progress))
+                returncode = await command_task
+            except asyncio.CancelledError:
+                if not cancelled:
+                    raise  # the worker itself was cancelled (e.g. quitting)
+                log_lines.append("repo-tui: cancelled; the command was stopped")
+                busy.add_output(log_lines[-1])
+                returncode = None
             except Exception as exc:  # noqa: BLE001 - e.g. `repo` not on PATH
                 log_lines.append(f"error: {exc}")
                 returncode = None
@@ -935,7 +973,7 @@ class RepoTuiApp(App):
         finally:
             header.set_syncing(False)
             await busy.dismiss()
-        result = ResultScreen(title, log_lines, returncode, report)
+        result = ResultScreen(title, log_lines, returncode, report, cancelled=cancelled)
         self._show_result(title, result, report, open_report)
         upgrade = repo_backend.find_launcher_upgrade(log_lines)
         if upgrade is not None:
@@ -1413,6 +1451,7 @@ class RepoTuiApp(App):
             return
         total = sum(len(files) for _, files in dirty)
         untracked = sum(1 for _, files in dirty for f in files if f.is_untracked)
+        added = sum(1 for _, files in dirty for f in files if f.is_new)
         if len(dirty) == 1:
             files = dirty[0][1]
             shown = "\n".join(f"  {escape(f.code)}  {escape(f.path)}" for f in files[:12])
@@ -1432,7 +1471,9 @@ class RepoTuiApp(App):
         body = (
             f"{shown}\n\n"
             f"Tracked changes are reverted to HEAD"
-            + (f" and [b]{untracked} untracked file(s) are deleted[/]" if untracked else "")
+            + (f"; [b]{added} newly added file(s) are deleted[/] (they aren't in HEAD)"
+               if added else "")
+            + (f"; [b]{untracked} untracked file(s) are deleted[/]" if untracked else "")
             + ".\n[b red]This cannot be undone.[/] Ignored files, commits and the branch are kept."
         )
 
@@ -1455,6 +1496,9 @@ class RepoTuiApp(App):
                     discard,
                     command="git restore --source=HEAD --staged --worktree … && git clean -f …",
                     only=projects,
+                    # git runs in a thread per project; stopping half-way
+                    # would leave the rescan racing the rest of it
+                    cancellable=False,
                 ),
                 exclusive=True,
                 group="discard",

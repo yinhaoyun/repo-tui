@@ -1,6 +1,8 @@
 """A blocking "please wait" dialog shown while a repo command (sync, detach,
 branch, forall) or a status refresh runs. It swallows every key and click so nothing else can
 be triggered mid-operation; the app dismisses it when the command finishes.
+A command that can be stopped (`on_cancel`) is cancelled by pressing esc
+twice within a few seconds, so one stray esc can't kill a long sync.
 
 Shows the command line, an animated progress bar (switched to a real
 percentage from repo's live progress line, e.g. "Fetching: 45% [4 jobs]
@@ -11,6 +13,7 @@ from __future__ import annotations
 
 import re
 import time
+from typing import Callable, Optional
 
 from ..markup import escape
 from rich.text import Text
@@ -20,9 +23,12 @@ from textual.screen import ModalScreen
 from textual.widgets import ProgressBar, RichLog, Static
 
 from .. import problems
-from ..hints import tip
+from ..hints import key, tip
 
 # "45% [4 jobs] (12/27)" / "45% (12/27)"; the counts may carry a unit suffix.
+# A second esc within this many seconds of the first cancels.
+_CANCEL_WINDOW = 3.0
+
 _PROGRESS_RE = re.compile(
     r"(\d+)%\s+(?:\[(\d+) jobs?\]\s+)?\((\d+)[A-Za-z]*/(\d+)[A-Za-z]*\)"
 )
@@ -30,9 +36,17 @@ _PROGRESS_RE = re.compile(
 
 class BusyModal(ModalScreen[None]):
     def __init__(
-        self, title: str, command: str = "", jobs: int | None = None, show_log: bool = True
+        self,
+        title: str,
+        command: str = "",
+        jobs: int | None = None,
+        show_log: bool = True,
+        on_cancel: Optional[Callable[[], bool]] = None,
     ) -> None:
         self._title = title
+        self._on_cancel = on_cancel
+        self._cancel_armed_at: float | None = None
+        self.cancelling = False
         self._show_log = show_log
         self._command = command
         self._jobs = jobs
@@ -51,13 +65,28 @@ class BusyModal(ModalScreen[None]):
             yield Static(id="busy-progress")
             if self._show_log:
                 yield RichLog(id="busy-log", wrap=False, highlight=False, markup=False)
-            yield Static(tip("Please wait — keys are disabled until this finishes."))
+            yield Static(self._tip_text(), id="busy-tip")
 
     def on_mount(self) -> None:
         self._update_status()
         self.set_interval(1.0, self._update_status)
 
+    def _tip_text(self) -> str:
+        if self.cancelling:
+            return tip("Cancelling — stopping the command…")
+        if self._on_cancel is None:
+            return tip("Please wait — keys are disabled until this finishes.")
+        if self._cancel_armed_at is not None:
+            return tip(f"Press {key('esc')} again to cancel the command.")
+        return tip(f"Please wait — other keys are disabled. {key('esc')} {key('esc')} cancels.")
+
     def _update_status(self) -> None:
+        if (
+            self._cancel_armed_at is not None
+            and time.monotonic() - self._cancel_armed_at > _CANCEL_WINDOW
+        ):
+            self._cancel_armed_at = None
+            self.query_one("#busy-tip", Static).update(self._tip_text())
         elapsed = int(time.monotonic() - self._started)
         parts = [self._phase, f"[dim]{elapsed // 60}:{elapsed % 60:02d}[/]"]
         if self._jobs:
@@ -102,6 +131,18 @@ class BusyModal(ModalScreen[None]):
     def on_key(self, event: events.Key) -> None:
         event.stop()
         event.prevent_default()
+        if event.key != "escape" or self._on_cancel is None or self.cancelling:
+            return
+        now = time.monotonic()
+        if self._cancel_armed_at is not None and now - self._cancel_armed_at <= _CANCEL_WINDOW:
+            self._cancel_armed_at = None
+            if self._on_cancel():  # False: the command already finished
+                self.cancelling = True
+                self._phase = "Cancelling…"
+                self._update_status()
+        else:
+            self._cancel_armed_at = now
+        self.query_one("#busy-tip", Static).update(self._tip_text())
 
     def on_click(self, event: events.Click) -> None:
         event.stop()

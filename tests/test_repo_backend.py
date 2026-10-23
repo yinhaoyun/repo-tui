@@ -324,3 +324,118 @@ def test_stream_subprocess_tty_keeps_multibyte_chars_split_across_reads(tmp_path
     )
     assert rc == 0
     assert output == ["中文"]
+
+
+# Starts a grandchild in the same process group, says both pids, then
+# waits; cancelling must stop both.
+_TREE_OF_PROCESSES = r"""
+import subprocess, sys, time
+child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+print("pids", child.pid, flush=True)
+time.sleep(60)
+"""
+
+
+def _alive(pid):
+    import os
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    # a zombie still answers kill(0); it has exited all the same
+    with open(f"/proc/{pid}/stat") as f:
+        return f.read().split(") ", 1)[1][0] != "Z"
+
+
+@pytest.mark.parametrize("tty", [False, True])
+def test_cancelling_a_command_stops_its_whole_process_group(tmp_path, tty):
+    async def scenario():
+        started = asyncio.Event()
+        pids = []
+
+        async def on_output(line):
+            if line.startswith("pids "):
+                pids.append(int(line.split()[1]))
+                started.set()
+
+        argv = [sys.executable, "-c", _TREE_OF_PROCESSES]
+        if tty:
+            task = asyncio.ensure_future(_stream_subprocess_tty(tmp_path, argv, on_output, None))
+        else:
+            task = asyncio.ensure_future(_stream_subprocess(tmp_path, argv, on_output))
+        await asyncio.wait_for(started.wait(), 10)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 10)
+        return pids[0]
+
+    grandchild = asyncio.run(scenario())
+    for _ in range(50):
+        if not _alive(grandchild):
+            break
+        import time
+        time.sleep(0.1)
+    assert not _alive(grandchild)
+
+
+def _write(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+
+
+def test_local_manifests_add_extend_and_remove_projects(fake_tree):
+    repo_dir = fake_tree / ".repo"
+    _write(repo_dir / "manifests" / "default.xml", """<?xml version="1.0"?>
+<manifest>
+  <remote name="aosp" fetch="https://example.invalid/" revision="refs/heads/aosp-main"/>
+  <remote name="vendor" fetch="https://vendor.invalid/" revision="refs/heads/vendor-main"/>
+  <default remote="aosp"/>
+  <include name="extra.xml"/>
+  <project path="frameworks/base" name="platform/frameworks/base"/>
+  <remove-project name="platform/extra"/>
+</manifest>
+""")
+    _write(repo_dir / "manifests" / "extra.xml", """<?xml version="1.0"?>
+<manifest>
+  <project path="extra" name="platform/extra"/>
+  <project path="build/make" name="platform/build" revision="main"/>
+</manifest>
+""")
+    _write(repo_dir / "local_manifests" / "10-mine.xml", """<?xml version="1.0"?>
+<manifest>
+  <remove-project name="platform/frameworks/base"/>
+  <project path="frameworks/base" name="vendor/base" remote="vendor"/>
+  <extend-project name="platform/build" revision="refs/heads/topic"/>
+  <project path="vendor/tools" name="vendor/tools" remote="vendor" revision="v1"/>
+</manifest>
+""")
+    for path in ("extra", "vendor/tools"):
+        (fake_tree / path).mkdir(parents=True)
+        _git(fake_tree / path, "init", "-q")
+    (repo_dir / "project.list").unlink()  # paths come from the manifests
+
+    projects = {p.path: p for p in repo_backend.load_projects(fake_tree)}
+    # the main manifest's remove-project drops what the earlier include added
+    assert set(projects) == {"build/make", "frameworks/base", "vendor/tools"}
+    assert projects["build/make"].manifest_revision == "refs/heads/topic"
+    base = projects["frameworks/base"]
+    # a project without a revision takes its remote's
+    assert (base.name, base.remote, base.manifest_revision) == (
+        "vendor/base", "vendor", "refs/heads/vendor-main"
+    )
+    assert projects["vendor/tools"].manifest_revision == "v1"
+
+
+def test_project_without_revision_uses_its_remotes_then_the_default(fake_tree):
+    _write(fake_tree / ".repo" / "manifests" / "default.xml", """<?xml version="1.0"?>
+<manifest>
+  <remote name="aosp" fetch="https://example.invalid/"/>
+  <remote name="other" fetch="https://other.invalid/" revision="other-main"/>
+  <default remote="aosp" revision="main"/>
+  <project path="build/make" name="platform/build"/>
+  <project path="frameworks/base" name="platform/frameworks/base" remote="other"/>
+</manifest>
+""")
+    projects = {p.path: p for p in repo_backend.load_projects(fake_tree)}
+    assert projects["build/make"].manifest_revision == "main"
+    assert projects["frameworks/base"].manifest_revision == "other-main"

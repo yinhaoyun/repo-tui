@@ -29,3 +29,9 @@ def test_summarize():
     assert summarize(0, 1, 0) == ("done with 1 error(s)", "error")
     assert summarize(1, 0, 0) == ("failed (exit 1)", "error")
     assert summarize(None, 1, 0) == ("failed to run, 1 error(s)", "error")
+
+
+def test_summarize_cancelled():
+    assert summarize(None, 0, 0, cancelled=True) == ("cancelled", "warning")
+    assert summarize(None, 0, 1, cancelled=True) == ("cancelled, 1 warning(s)", "warning")
+    assert summarize(None, 2, 0, cancelled=True) == ("cancelled, 2 error(s)", "error")

@@ -130,28 +130,62 @@ def _parse_status_v2(output: str) -> tuple[str, bool, int, int, list[FileStatus]
     return branch, detached, ahead, behind, files
 
 
-def collect_project_status(project: Project, ignore: IgnoreRules) -> Project:
-    """Populate git status fields on `project` in place, and return it."""
+def _line_stats(project: Project, has_head: bool) -> dict[str, tuple[int, int]]:
+    """{path: (added, deleted)} for everything since HEAD, staged or not:
+    one `git diff-index HEAD`. Before the first commit there's no HEAD, so
+    the staged and unstaged diffs are added up instead.
+
+    These are plumbing commands on purpose: porcelain `git diff` against
+    the working tree takes index.lock to save refreshed stat info even
+    with --no-optional-locks, which would undo the point of a background
+    scan's lock-free status."""
+    if has_head:
+        return _parse_numstat(
+            _run_git(project.abs_path, ["diff-index", "-M", "--numstat", "-z", "HEAD"])
+        )
+    unstaged = _parse_numstat(_run_git(project.abs_path, ["diff-files", "--numstat", "-z"]))
+    staged = _parse_numstat(
+        _run_git(project.abs_path, ["diff", "--cached", "--numstat", "-z"])
+    )
+    return {
+        path: (unstaged.get(path, (0, 0))[0] + staged.get(path, (0, 0))[0],
+               unstaged.get(path, (0, 0))[1] + staged.get(path, (0, 0))[1])
+        for path in {*unstaged, *staged}
+    }
+
+
+def collect_project_status(
+    project: Project, ignore: IgnoreRules, optional_locks: bool = True
+) -> Project:
+    """Populate git status fields on `project` in place, and return it.
+
+    `optional_locks=False` (background scans) runs git status with
+    --no-optional-locks: it doesn't take index.lock to save refreshed stat
+    info, so it can't make a git command the user runs at the same moment
+    fail with "index.lock exists". Foreground scans keep the lock, since
+    saving that info keeps later scans fast after a build touched files."""
     try:
+        locks = [] if optional_locks else ["--no-optional-locks"]
         status_out = _run_git_checked(
-            project.abs_path, ["status", "--porcelain=v2", "--branch", "--untracked-files=all", "-z"]
+            project.abs_path,
+            [*locks, "status", "--porcelain=v2", "--branch", "--untracked-files=all", "-z"],
         )
         branch, detached, ahead, behind, files = _parse_status_v2(status_out)
 
-        unstaged = _parse_numstat(_run_git(project.abs_path, ["diff", "--numstat", "-z"]))
-        staged = _parse_numstat(_run_git(project.abs_path, ["diff", "--cached", "--numstat", "-z"]))
-
+        stats = _line_stats(project, has_head="# branch.oid (initial)" not in status_out)
         for f in files:
-            a1, d1 = unstaged.get(f.path, (0, 0))
-            a2, d2 = staged.get(f.path, (0, 0))
-            f.added, f.deleted = a1 + a2, d1 + d2
+            f.added, f.deleted = stats.get(f.path, (0, 0))
             f.ignored = ignore.matches(project.name, f.path)
 
-        branches_out = _run_git(
-            project.abs_path, ["for-each-ref", "--format=%(refname:short)", "refs/heads/"]
-        )
-        local_branches = [b for b in branches_out.splitlines() if b.strip()]
-        shallow = _run_git(project.abs_path, ["rev-parse", "--is-shallow-repository"])
+        # One call for both: "true"/"false", then refs/heads/<name> per branch.
+        refs_out = _run_git(
+            project.abs_path,
+            ["rev-parse", "--is-shallow-repository", "--symbolic-full-name", "--branches"],
+        ).splitlines()
+        shallow = refs_out[0] if refs_out else ""
+        local_branches = [
+            line[len("refs/heads/"):] for line in refs_out[1:] if line.startswith("refs/heads/")
+        ]
 
         project.current_branch = branch
         project.is_detached = detached
@@ -179,11 +213,13 @@ def collect_all(
     ignore: IgnoreRules,
     max_workers: int = 16,
     on_progress: Optional[Callable[[int, int, Project], None]] = None,
+    optional_locks: bool = True,
 ) -> list[Project]:
     """Synchronous, thread-parallel status collection across many projects.
 
     `on_progress(done, total, project)` is called from worker threads as each
-    project finishes, so it must be thread-safe."""
+    project finishes, so it must be thread-safe. `optional_locks`: see
+    collect_project_status."""
     projects = list(projects)
     if not projects:
         return []
@@ -192,7 +228,7 @@ def collect_all(
 
     def collect(project: Project) -> Project:
         nonlocal done
-        collect_project_status(project, ignore)
+        collect_project_status(project, ignore, optional_locks)
         if on_progress is not None:
             with lock:
                 done += 1

@@ -2236,3 +2236,99 @@ def test_brackets_in_commands_and_paths_show_literally(dirty_tree, monkeypatch):
             assert "pages/[id]/[/]" in str(menu.query_one("#menu-title").render())
 
     asyncio.run(scenario())
+
+
+def test_esc_esc_cancels_a_running_sync_and_still_rescans(dirty_tree, monkeypatch):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        stopped = asyncio.Event()
+
+        async def endless_sync(repo_root, paths=None, on_output=None, on_progress=None, jobs=None):
+            await on_output("Fetching projects")
+            try:
+                await asyncio.Event().wait()  # never finishes by itself
+            except asyncio.CancelledError:
+                stopped.set()
+                raise
+
+        monkeypatch.setattr(repo_backend, "sync_projects", endless_sync)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+
+            await pilot.press("space", "S")
+            await pilot.pause()
+            busy = app.screen_stack[-1]
+            assert isinstance(busy, BusyModal)
+            assert "cancels" in str(busy.query_one("#busy-tip").render())
+
+            await pilot.press("escape")  # one esc only arms it
+            await pilot.pause()
+            assert app.screen_stack[-1] is busy and not stopped.is_set()
+            assert "again to cancel" in str(busy.query_one("#busy-tip").render())
+
+            await pilot.press("escape")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert stopped.is_set()
+            result = app.screen_stack[-1]
+            assert isinstance(result, ResultScreen)
+            assert (result.status, result.severity) == ("cancelled", "warning")
+            assert app.sync_report is not None  # the partial sync is still compared
+
+    asyncio.run(scenario())
+
+
+def test_status_refresh_dialog_offers_no_cancel(dirty_tree):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()  # the startup scan's own dialog
+            await pilot.pause()
+            busy = BusyModal("Refreshing status", show_log=False)
+            await app.push_screen(busy)
+            await pilot.pause()
+            assert "cancels" not in str(busy.query_one("#busy-tip").render())
+            await pilot.press("escape", "escape")
+            await pilot.pause()
+            assert app.screen_stack[-1] is busy and not busy.cancelling
+
+    asyncio.run(scenario())
+
+
+def test_revert_and_discard_say_a_newly_added_file_is_deleted(dirty_tree):
+    async def scenario():
+        app = RepoTuiApp(dirty_tree)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            _select_project(app.query_one("#project-list", ProjectList), "frameworks/base")
+            await pilot.pause()
+
+            await pilot.press("space", "x")
+            await pilot.pause()
+            confirm = app.screen_stack[-1]
+            assert isinstance(confirm, ConfirmModal)
+            assert "1 newly added file(s) are deleted" in confirm._body
+            await pilot.press("n")
+            await pilot.pause()
+
+            project = next(p for p in app.projects if p.path == "frameworks/base")
+            new = next(f for f in project.files if f.path == "real_change.c")
+            assert new.is_new
+            table = app.query_one("#file-table", FileTable)
+            table.focus()
+            for row in range(table.row_count):
+                table.move_cursor(row=row)
+                if table.file_at_cursor() is new:
+                    break
+            app.action_revert_file()
+            await pilot.pause()
+            confirm = app.screen_stack[-1]
+            assert isinstance(confirm, ConfirmModal)
+            assert "newly added file is deleted" in confirm._body
+
+    asyncio.run(scenario())

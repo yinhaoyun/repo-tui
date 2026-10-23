@@ -24,6 +24,12 @@ class FileStatus:
         return self.index_status == "?" and self.worktree_status == "?"
 
     @property
+    def is_new(self) -> bool:
+        """Added in the index but not in HEAD (a staged new file, not a
+        rename's new name): reverting it to HEAD deletes it."""
+        return self.index_status == "A" and not self.orig_path
+
+    @property
     def is_staged(self) -> bool:
         return self.index_status not in (" ", "?")
 

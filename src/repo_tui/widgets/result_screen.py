@@ -20,22 +20,29 @@ from .sync_report import SyncReportScreen
 _MAX_PROBLEMS_SHOWN = 10
 
 
-def summarize(returncode: Optional[int], errors: int, warnings: int) -> tuple[str, str]:
+def summarize(
+    returncode: Optional[int], errors: int, warnings: int, cancelled: bool = False
+) -> tuple[str, str]:
     """(status text, severity) for a finished command; severity is one of
-    Textual's notify severities ("information", "warning", "error")."""
+    Textual's notify severities ("information", "warning", "error"). A
+    command the user cancelled is a warning: stopped on purpose."""
     counts = []
     if errors:
         counts.append(f"{errors} error(s)")
     if warnings:
         counts.append(f"{warnings} warning(s)")
-    if returncode is None:
+    if cancelled:
+        status = "cancelled"
+    elif returncode is None:
         status = "failed to run"
     elif returncode != 0:
         status = f"failed (exit {returncode})"
     else:
         status = "done"
     if counts:
-        status += (" with " if returncode == 0 else ", ") + " and ".join(counts)
+        status += (" with " if returncode == 0 and not cancelled else ", ") + " and ".join(counts)
+    if cancelled:
+        return status, "error" if errors else "warning"
     if returncode != 0 or errors:
         return status, "error"
     if warnings:
@@ -56,6 +63,7 @@ class ResultScreen(ModalScreen[None]):
         lines: list[str],
         returncode: Optional[int],
         report: Optional[SyncReport] = None,
+        cancelled: bool = False,
     ) -> None:
         self._title = title
         self._report = report
@@ -66,7 +74,7 @@ class ResultScreen(ModalScreen[None]):
         ]
         errors = sum(1 for level, _ in self.problem_lines if level == problems.ERROR)
         self.status, self.severity = summarize(
-            returncode, errors, len(self.problem_lines) - errors
+            returncode, errors, len(self.problem_lines) - errors, cancelled
         )
         super().__init__()
 

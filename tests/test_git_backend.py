@@ -71,7 +71,7 @@ def test_parse_status_v2_rename():
 
 
 def test_collect_all_reports_progress_per_project(tmp_path, monkeypatch):
-    monkeypatch.setattr(git_backend, "collect_project_status", lambda p, ignore: p)
+    monkeypatch.setattr(git_backend, "collect_project_status", lambda p, ignore, optional_locks=True: p)
     projects = [Project(path=f"p{i}", name=f"p{i}", abs_path=tmp_path) for i in range(5)]
     calls = []
     collect_all(projects, IgnoreRules(), max_workers=3,
@@ -369,3 +369,68 @@ def test_failed_git_status_is_an_error_not_a_clean_project(tmp_path):
     git_backend.collect_project_status(project, IgnoreRules())
     assert project.error.startswith("fatal:")
     assert project.is_changed
+
+
+def _repo(tmp_path):
+    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True, env=env)
+
+    git("init", "-q")
+    return git
+
+
+def test_background_scan_leaves_the_index_alone(tmp_path):
+    """--no-optional-locks: git status doesn't rewrite .git/index (taking
+    index.lock) to save refreshed stat info; a normal scan does."""
+    git = _repo(tmp_path)
+    (tmp_path / "f.txt").write_text("x\n")
+    git("add", ".")
+    git("commit", "-q", "-m", "init")
+    index = tmp_path / ".git" / "index"
+    project = Project(path="p", name="p", abs_path=tmp_path)
+
+    def touched_scan(optional_locks):
+        os.utime(tmp_path / "f.txt", (1_000_000_000, 1_000_000_000))  # stat info now stale
+        os.utime(index, (1_000_000_000, 1_000_000_000))
+        git_backend.collect_project_status(project, IgnoreRules(), optional_locks)
+        return index.stat().st_mtime != 1_000_000_000
+
+    assert not touched_scan(optional_locks=False)
+    assert touched_scan(optional_locks=True)
+
+
+def test_status_scan_runs_three_git_commands(tmp_path, monkeypatch):
+    git = _repo(tmp_path)
+    (tmp_path / "f.txt").write_text("a\n")
+    git("add", ".")
+    git("commit", "-q", "-m", "init")
+    git("branch", "topic/x")
+    (tmp_path / "f.txt").write_text("a\nb\n")
+    calls = []
+    real_run = subprocess.run
+
+    def spy(argv, *args, **kwargs):
+        calls.append(argv)
+        return real_run(argv, *args, **kwargs)
+
+    monkeypatch.setattr(git_backend.subprocess, "run", spy)
+    project = Project(path="p", name="p", abs_path=tmp_path)
+    git_backend.collect_project_status(project, IgnoreRules())
+    assert len(calls) == 3
+    assert sorted(project.local_branches) == sorted(["topic/x", project.current_branch])
+    assert not project.is_shallow
+    assert (project.files[0].added, project.files[0].deleted) == (1, 0)
+
+
+def test_status_before_the_first_commit_adds_staged_and_unstaged(tmp_path):
+    git = _repo(tmp_path)
+    (tmp_path / "f.txt").write_text("a\nb\n")
+    git("add", ".")
+    (tmp_path / "f.txt").write_text("a\nb\nc\n")
+    project = Project(path="p", name="p", abs_path=tmp_path)
+    git_backend.collect_project_status(project, IgnoreRules())
+    assert project.error == ""
+    assert (project.files[0].added, project.files[0].deleted) == (3, 0)

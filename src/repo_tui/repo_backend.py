@@ -17,6 +17,7 @@ import os
 import pty
 import re
 import shutil
+import signal
 import struct
 import termios
 import xml.etree.ElementTree as ET
@@ -58,8 +59,98 @@ def _read_manifest_xml(repo_root: Path) -> ET.Element:
     return root
 
 
+def _local_manifests(repo_root: Path) -> list[ET.Element]:
+    """The tree's local manifests, in the order repo applies them: the
+    legacy .repo/local_manifest.xml, then .repo/local_manifests/*.xml sorted
+    by name. Each has its <include>s (relative to its own folder) inlined."""
+    repo_dir = repo_root / ".repo"
+    local_dir = repo_dir / "local_manifests"
+    paths = [repo_dir / "local_manifest.xml"]
+    try:
+        paths += sorted(p for p in local_dir.iterdir() if p.suffix == ".xml")
+    except OSError:
+        pass
+    roots = []
+    for path in paths:
+        try:
+            root = ET.parse(path).getroot()
+        except (OSError, ET.ParseError):
+            continue
+        _inline_includes(root, path.parent, depth=0)
+        roots.append(root)
+    return roots
+
+
+@dataclass
+class _ManifestProject:
+    name: str
+    revision: str
+    remote: str
+    clone_depth: str
+
+
+def _manifest_projects(repo_root: Path) -> dict[str, _ManifestProject]:
+    """{path: manifest fields} after the main manifest and then every local
+    manifest have been applied in order, the way repo does: <project> adds
+    one, <extend-project> changes the revision/remote of the ones with its
+    name (and path, if given), <remove-project> drops them. A project's
+    revision is its own, else its remote's, else <default>'s."""
+    try:
+        roots = [_read_manifest_xml(repo_root)]
+    except (OSError, ET.ParseError):
+        roots = []
+    roots += _local_manifests(repo_root)
+    defaults: dict[str, str] = {}
+    remote_revisions: dict[str, str] = {}
+    for root in roots:  # a local manifest may add a remote but not a default
+        default = root.find("default")
+        if default is not None and not defaults:
+            defaults = dict(default.attrib)
+        for remote in root.findall("remote"):
+            if remote.get("name") and remote.get("revision"):
+                remote_revisions[remote.get("name")] = remote.get("revision")
+
+    def revision_for(remote: str, own: str) -> str:
+        return own or remote_revisions.get(remote, "") or defaults.get("revision", "")
+
+    projects: dict[str, _ManifestProject] = {}
+    for root in roots:
+        for el in root:
+            name = el.get("name", "")
+            if el.tag == "project":
+                path = el.get("path") or name
+                remote = el.get("remote", defaults.get("remote", ""))
+                projects[path] = _ManifestProject(
+                    name or path,
+                    revision_for(remote, el.get("revision", "")),
+                    remote,
+                    el.get("clone-depth", ""),
+                )
+                continue
+            matching = [
+                path for path, p in projects.items()
+                if p.name == name and el.get("path", path) == path
+            ]
+            if el.tag == "remove-project":
+                for path in matching:
+                    del projects[path]
+            elif el.tag == "extend-project":
+                for path in matching:
+                    p = projects[path]
+                    if el.get("remote"):
+                        p.remote = el.get("remote")
+                        p.revision = revision_for(p.remote, el.get("revision", ""))
+                    elif el.get("revision"):
+                        p.revision = el.get("revision")
+    return projects
+
+
 def _inline_includes(root: ET.Element, manifests_dir: Path, depth: int) -> None:
+    """Replace each <include> with the included manifest's elements, in
+    place: order matters, e.g. a later <remove-project> drops a project
+    that an earlier include added."""
     for include in root.findall("include"):
+        index = list(root).index(include)
         root.remove(include)
         name = include.get("name", "")
         if not name or depth > 8:
@@ -69,7 +160,8 @@ def _inline_includes(root: ET.Element, manifests_dir: Path, depth: int) -> None:
         except (OSError, ET.ParseError):
             continue
         _inline_includes(included, manifests_dir, depth + 1)
-        root.extend(list(included))
+        for offset, child in enumerate(list(included)):
+            root.insert(index + offset, child)
 
 
 def load_tree_info(repo_root: Path) -> TreeInfo:
@@ -260,26 +352,9 @@ async def switch_manifest(
 
 
 def load_projects(repo_root: Path) -> list[Project]:
-    """Build the project list with manifest-derived fields (no git status yet)."""
-    revisions_by_path: dict[str, str] = {}
-    names_by_path: dict[str, str] = {}
-    remotes_by_path: dict[str, str] = {}
-    depths_by_path: dict[str, str] = {}
-    try:
-        root = _read_manifest_xml(repo_root)
-        default = root.find("default")
-        default_revision = default.get("revision", "") if default is not None else ""
-        default_remote = default.get("remote", "") if default is not None else ""
-        for proj in root.findall("project"):
-            path = proj.get("path") or proj.get("name", "")
-            name = proj.get("name", path)
-            revision = proj.get("revision", default_revision)
-            revisions_by_path[path] = revision
-            names_by_path[path] = name
-            remotes_by_path[path] = proj.get("remote", default_remote)
-            depths_by_path[path] = proj.get("clone-depth", "")
-    except (FileNotFoundError, ET.ParseError):
-        pass
+    """Build the project list with manifest-derived fields (no git status
+    yet), local manifests included."""
+    manifest = _manifest_projects(repo_root)
 
     project_list_file = repo_root / ".repo" / "project.list"
     paths: list[str]
@@ -290,24 +365,47 @@ def load_projects(repo_root: Path) -> list[Project]:
             if line.strip()
         ]
     else:
-        paths = list(revisions_by_path.keys())
+        paths = list(manifest)
 
     projects = []
     for path in paths:
         abs_path = repo_root / path
         if not (abs_path / ".git").exists():
             continue
+        m = manifest.get(path)
         projects.append(
             Project(
                 path=path,
-                name=names_by_path.get(path, path),
+                name=m.name if m else path,
                 abs_path=abs_path,
-                manifest_revision=revisions_by_path.get(path, ""),
-                remote=remotes_by_path.get(path, ""),
-                clone_depth=depths_by_path.get(path, ""),
+                manifest_revision=m.revision if m else "",
+                remote=m.remote if m else "",
+                clone_depth=m.clone_depth if m else "",
             )
         )
     return projects
+
+
+# How long a cancelled command gets to exit after SIGTERM before SIGKILL.
+_TERMINATE_GRACE = 5.0
+
+
+async def _terminate(process: asyncio.subprocess.Process) -> None:
+    """Stop a command started with start_new_session (so its pid is also
+    its process group): SIGTERM the whole group -- repo's git children
+    too -- then SIGKILL whatever is still running after a grace period."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        if process.returncode is not None:
+            return
+        try:
+            os.killpg(process.pid, sig)
+        except (ProcessLookupError, PermissionError):
+            return
+        try:
+            await asyncio.wait_for(process.wait(), _TERMINATE_GRACE)
+            return
+        except asyncio.TimeoutError:
+            continue
 
 
 async def _stream_subprocess(
@@ -328,13 +426,17 @@ async def _stream_subprocess(
         env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
     )
     assert process.stdout is not None
-    while True:
-        line = await process.stdout.readline()
-        if not line:
-            break
-        if on_output is not None:
-            await on_output(line.decode(errors="replace").rstrip("\n"))
-    return await process.wait()
+    try:
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+            if on_output is not None:
+                await on_output(line.decode(errors="replace").rstrip("\n"))
+        return await process.wait()
+    except asyncio.CancelledError:  # cancelled from the busy dialog, or quitting
+        await _terminate(process)
+        raise
 
 
 async def _stream_subprocess_tty(
@@ -348,7 +450,9 @@ async def _stream_subprocess_tty(
 
     repo only prints its live progress line ("Fetching: 45% [4 jobs] (12/27)
     ...", redrawn in place with \r) when stderr is a TTY. Text ending in \n
-    goes to on_output; the in-place progress line goes to on_progress."""
+    goes to on_output; the in-place progress line goes to on_progress.
+
+    Cancelling the awaiting task stops the command's whole process group."""
     master, slave = pty.openpty()
     # Wide enough that repo doesn't elide the progress line; no output
     # post-processing, so newlines arrive as plain \n rather than \r\n.
@@ -372,12 +476,18 @@ async def _stream_subprocess_tty(
     loop = asyncio.get_running_loop()
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     buf = ""
+    # The blocking read runs in a thread that can't be interrupted, so it's
+    # shielded from cancellation and master is only closed once it returns.
+    read = None
+    close_master = True
     try:
         while True:
+            read = loop.run_in_executor(None, os.read, master, 4096)
             try:
-                chunk = await loop.run_in_executor(None, os.read, master, 4096)
+                chunk = await asyncio.shield(read)
             except OSError:  # EIO: every writer to the pty has exited
                 break
+            read = None
             if not chunk:
                 break
             buf += decoder.decode(chunk)
@@ -399,8 +509,22 @@ async def _stream_subprocess_tty(
         buf += decoder.decode(b"", final=True)
         if buf.strip() and on_output is not None:
             await on_output(_ANSI_RE.sub("", buf).rstrip())
+    except asyncio.CancelledError:  # cancelled from the busy dialog, or quitting
+        await _terminate(process)
+        if read is not None:
+            # Returns (EIO) once nothing holds the pty open. Something that
+            # escaped the process group might; then leak the fd rather than
+            # close it under a thread still reading it.
+            try:
+                await asyncio.wait_for(asyncio.shield(read), 2.0)
+            except asyncio.TimeoutError:
+                close_master = False
+            except OSError:
+                pass
+        raise
     finally:
-        os.close(master)
+        if close_master:
+            os.close(master)
     return await process.wait()
 
 
